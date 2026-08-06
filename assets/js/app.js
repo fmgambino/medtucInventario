@@ -1,12 +1,12 @@
 (() => {
   'use strict';
-  const APP_VERSION = '0.3.2';
+  const APP_VERSION = '0.3.3';
   const C = window.MEDTUC_CONFIG || {};
   const configured = Boolean(C.SUPABASE_URL && /^https:\/\/.+\.supabase\.co\/?$/i.test(C.SUPABASE_URL) && C.SUPABASE_ANON_KEY && C.SUPABASE_ANON_KEY.length > 20 && !/xxxx|TU_ANON/i.test(C.SUPABASE_ANON_KEY));
   const sb = configured ? window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''), C.SUPABASE_ANON_KEY) : null;
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
-  const state = { page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,poll:null,availablePatch:null };
+  const state = { page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,poll:null,availablePatch:null,localPatchFile:null,selected:new Set() };
 
   const swalBase = {background:'#101827',color:'#edf4ff',confirmButtonColor:'#6ca8ff'};
   const toast = (icon,title,text='') => Swal.fire({...swalBase,icon,title,text,confirmButtonText:'Aceptar'});
@@ -47,7 +47,13 @@
     return `$ErrorActionPreference = 'Stop'\r\n`+
 `$SupabaseEndpoint='${psQuote(endpoint)}'\r\n$AnonKey='${psQuote(C.SUPABASE_ANON_KEY)}'\r\n$OfficeId='${psQuote(officeId)}'\r\n$EquipmentId='${psQuote(equipmentId)}'\r\n$OfficeName='${psQuote(officeName)}'\r\n$EquipmentName='${psQuote(equipmentName)}'\r\n`+
 `function CleanValue { param([object]$Value,[string]$Fallback='No detectado'); if($null -eq $Value){return $Fallback}; $Text=([string]$Value).Trim(); if([string]::IsNullOrEmpty($Text)){return $Fallback}; return $Text }\r\n`+
-`try {\r\n  try {[Net.ServicePointManager]::SecurityProtocol = [Enum]::ToObject([Net.SecurityProtocolType],3072)} catch {}\r\n  Write-Host ''\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host ' RELEVAMIENTO MANAGER - RECOPILADOR v0.3.2' -ForegroundColor Cyan\r\n  Write-Host ' Direccion de Informatica - Ministerio de Educacion Tucuman' -ForegroundColor Gray\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host 'Recopilando datos del equipo...' -ForegroundColor White\r\n  $cs=Get-WmiObject -Class Win32_ComputerSystem | Select-Object -First 1\r\n  $csp=Get-WmiObject -Class Win32_ComputerSystemProduct | Select-Object -First 1\r\n  $cpu=Get-WmiObject -Class Win32_Processor | Select-Object -First 1\r\n  $os=Get-WmiObject -Class Win32_OperatingSystem | Select-Object -First 1\r\n  $board=Get-WmiObject -Class Win32_BaseBoard | Select-Object -First 1\r\n  $bios=Get-WmiObject -Class Win32_BIOS | Select-Object -First 1\r\n  $gpu=Get-WmiObject -Class Win32_VideoController | Where-Object {$_.Name} | Select-Object -First 1\r\n  $disks=@(Get-WmiObject -Class Win32_DiskDrive | Where-Object {[double]$_.Size -gt 0})\r\n  $rams=@(Get-WmiObject -Class Win32_PhysicalMemory)\r\n  $ramBytes=($rams | Measure-Object -Property Capacity -Sum).Sum\r\n  if(-not $ramBytes){$ramBytes=$cs.TotalPhysicalMemory}\r\n  $ramGB=[math]::Round(([double]$ramBytes/1GB),0)\r\n  $memMap=@{20='DDR';21='DDR2';22='DDR2 FB-DIMM';24='DDR3';26='DDR4';34='DDR5'}\r\n  $ramTypes=@()\r\n  foreach($mem in $rams){$typeCode=0; if($mem.PSObject.Properties['SMBIOSMemoryType']){$typeCode=[int]$mem.SMBIOSMemoryType}; if($memMap.ContainsKey($typeCode)){$ramTypes+=$memMap[$typeCode]} elseif($mem.MemoryType -and $memMap.ContainsKey([int]$mem.MemoryType)){$ramTypes+=$memMap[[int]$mem.MemoryType]}}\r\n  $ramType=if($ramTypes.Count -gt 0){($ramTypes | Select-Object -Unique) -join ', '}else{'No detectado'}\r\n  $storageParts=@(); foreach($disk in $disks){$gb=[math]::Round(([double]$disk.Size/1GB),0);$diskModel=CleanValue -Value $disk.Model;$kind='HDD';if(($disk.MediaType -match 'SSD|Solid') -or ($diskModel -match 'SSD|Solid')){$kind='SSD'}elseif($disk.InterfaceType -match 'USB'){$kind='USB'};$storageParts+=("{0} GB ({1}) {2}" -f $gb,$kind,$diskModel)}\r\n  $storage=if($storageParts.Count -gt 0){$storageParts -join ' + '}else{'No detectado'}\r\n  $fullName=$env:COMPUTERNAME; if($cs.Domain -and $cs.Domain -ne 'WORKGROUP' -and $cs.Domain -ne $env:COMPUTERNAME){$fullName="$($env:COMPUTERNAME).$($cs.Domain)"}\r\n  $installDate=''; try{$installDate=[Management.ManagementDateTimeConverter]::ToDateTime($os.InstallDate).ToString('yyyy-MM-dd HH:mm:ss')}catch{}\r\n  $cv='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';$displayVersion='';$productId='';try{$reg=Get-ItemProperty -Path $cv;$displayVersion=if($reg.DisplayVersion){$reg.DisplayVersion}elseif($reg.ReleaseId){$reg.ReleaseId}else{''};$productId=$reg.ProductId}catch{}\r\n  $arch=CleanValue -Value $os.OSArchitecture; if($arch -eq 'No detectado'){if([IntPtr]::Size -eq 8){$arch='64 bits'}else{$arch='32 bits'}}\r\n  $boardManufacturer=CleanValue -Value $board.Manufacturer -Fallback ''\r\n  $boardProduct=CleanValue -Value $board.Product -Fallback ''\r\n  $motherboard=("{0} {1}" -f $boardManufacturer,$boardProduct).Trim(); if([string]::IsNullOrEmpty($motherboard)){$motherboard='No detectado'}\r\n  $payload=@{\r\n    office_id=$OfficeId; equipment_id=$EquipmentId; office_name=$OfficeName; equipment_name=$EquipmentName;\r\n    brand=(CleanValue -Value $cs.Manufacturer); model=(CleanValue -Value $cs.Model); processor=(CleanValue -Value $cpu.Name); cores=[int]$cpu.NumberOfCores;\r\n    operating_system=("{0} ({1})" -f (CleanValue -Value $os.Caption),$arch); windows_version=(CleanValue -Value $displayVersion); windows_build=(CleanValue -Value $os.BuildNumber); windows_install_date=(CleanValue -Value $installDate);\r\n    motherboard=$motherboard; ram_gb=[int]$ramGB; ram_type=$ramType; storage=$storage; graphics=(CleanValue -Value $gpu.Name);\r\n    hostname=$env:COMPUTERNAME; full_device_name=$fullName; domain_workgroup=(CleanValue -Value $cs.Domain); system_type=(CleanValue -Value $cs.SystemType);\r\n    device_uuid=(CleanValue -Value $csp.UUID); product_id=(CleanValue -Value $productId); bios_serial=(CleanValue -Value $bios.SerialNumber); bios_version=(CleanValue -Value (($bios.SMBIOSBIOSVersion -join ' '))); collector_version='0.3.2'\r\n  }\r\n  Add-Type -AssemblyName System.Web.Extensions\r\n  $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer\r\n  $request=@{p_payload=$payload}\r\n  $json=$serializer.Serialize($request)\r\n  $wc=New-Object System.Net.WebClient\r\n  $wc.Encoding=[Text.Encoding]::UTF8\r\n  $wc.Headers.Add('apikey',$AnonKey)\r\n  $wc.Headers.Add('Authorization',('Bearer '+$AnonKey))\r\n  $wc.Headers.Add('Content-Type','application/json')\r\n  $result=$wc.UploadString($SupabaseEndpoint,'POST',$json)\r\n  Write-Host ''\r\n  if($result -match 'already_registered'){\r\n    Write-Host 'INVENTARIO YA COMPLETADO.' -ForegroundColor Green\r\n    Write-Host 'Este equipo ya fue relevado correctamente 3 veces y ya se encuentra cargado al inventario principal de la Direccion de Informatica - Ministerio de Educacion Tucuman.' -ForegroundColor Yellow\r\n  } else {\r\n    $attempt=''; if($result -match '"attempt_count"\\s*:\\s*(\\d+)'){$attempt=$matches[1]}\r\n    Write-Host 'OK - Datos guardados correctamente.' -ForegroundColor Green\r\n    if($attempt){Write-Host ('Ejecucion registrada: '+$attempt+' de 3.') -ForegroundColor Cyan}\r\n    Write-Host ('Equipo: '+$EquipmentName+' | Oficina: '+$OfficeName) -ForegroundColor Gray\r\n  }\r\n  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 0\r\n} catch {\r\n  Write-Host ''\r\n  Write-Host ('ERROR: '+$_.Exception.Message) -ForegroundColor Red\r\n  Write-Host 'Verifique la conexion a Internet e intente nuevamente.' -ForegroundColor Yellow\r\n  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 1\r\n}\r\n`;
+`try {\r\n  try {[Net.ServicePointManager]::SecurityProtocol = [Enum]::ToObject([Net.SecurityProtocolType],3072)} catch {}\r\n  Write-Host ''\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host ' RELEVAMIENTO MANAGER - RECOPILADOR v0.3.3' -ForegroundColor Cyan\r\n  Write-Host ' Direccion de Informatica - Ministerio de Educacion Tucuman' -ForegroundColor Gray\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host 'Recopilando datos del equipo...' -ForegroundColor White\r\n  $cs=Get-WmiObject -Class Win32_ComputerSystem | Select-Object -First 1\r\n  $csp=Get-WmiObject -Class Win32_ComputerSystemProduct | Select-Object -First 1\r\n  $cpu=Get-WmiObject -Class Win32_Processor | Select-Object -First 1\r\n  $os=Get-WmiObject -Class Win32_OperatingSystem | Select-Object -First 1\r\n  $board=Get-WmiObject -Class Win32_BaseBoard | Select-Object -First 1\r\n  $bios=Get-WmiObject -Class Win32_BIOS | Select-Object -First 1\r\n  $gpu=Get-WmiObject -Class Win32_VideoController | Where-Object {$_.Name} | Select-Object -First 1\r\n  $disks=@(Get-WmiObject -Class Win32_DiskDrive | Where-Object {[double]$_.Size -gt 0})\r\n  $rams=@(Get-WmiObject -Class Win32_PhysicalMemory)\r\n  $ramBytes=($rams | Measure-Object -Property Capacity -Sum).Sum\r\n  if(-not $ramBytes){$ramBytes=$cs.TotalPhysicalMemory}\r\n  $ramGB=[math]::Round(([double]$ramBytes/1GB),0)\r\n  $memMap=@{20='DDR';21='DDR2';22='DDR2 FB-DIMM';24='DDR3';26='DDR4';34='DDR5'}\r\n  $ramTypes=@()\r\n  foreach($mem in $rams){$typeCode=0; if($mem.PSObject.Properties['SMBIOSMemoryType']){$typeCode=[int]$mem.SMBIOSMemoryType}; if($memMap.ContainsKey($typeCode)){$ramTypes+=$memMap[$typeCode]} elseif($mem.MemoryType -and $memMap.ContainsKey([int]$mem.MemoryType)){$ramTypes+=$memMap[[int]$mem.MemoryType]}}\r\n  $ramType=if($ramTypes.Count -gt 0){($ramTypes | Select-Object -Unique) -join ', '}else{'No detectado'}\r\n  $storageParts=@(); foreach($disk in $disks){$gb=[math]::Round(([double]$disk.Size/1GB),0);$diskModel=CleanValue -Value $disk.Model;$kind='HDD';if(($disk.MediaType -match 'SSD|Solid') -or ($diskModel -match 'SSD|Solid')){$kind='SSD'}elseif($disk.InterfaceType -match 'USB'){$kind='USB'};$storageParts+=("{0} GB ({1}) {2}" -f $gb,$kind,$diskModel)}\r\n  $storage=if($storageParts.Count -gt 0){$storageParts -join ' + '}else{'No detectado'}\r\n  $fullName=$env:COMPUTERNAME; if($cs.Domain -and $cs.Domain -ne 'WORKGROUP' -and $cs.Domain -ne $env:COMPUTERNAME){$fullName="$($env:COMPUTERNAME).$($cs.Domain)"}\r\n  $installDate=''; try{$installDate=[Management.ManagementDateTimeConverter]::ToDateTime($os.InstallDate).ToString('yyyy-MM-dd HH:mm:ss')}catch{}\r\n  $cv='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';$displayVersion='';$productId='';try{$reg=Get-ItemProperty -Path $cv;$displayVersion=if($reg.DisplayVersion){$reg.DisplayVersion}elseif($reg.ReleaseId){$reg.ReleaseId}else{''};$productId=$reg.ProductId}catch{}\r\n  $arch=CleanValue -Value $os.OSArchitecture; if($arch -eq 'No detectado'){if([IntPtr]::Size -eq 8){$arch='64 bits'}else{$arch='32 bits'}}\r\n  $licenseStatus='Desconocido';$licenseChannel='No detectado';$partialKey='';$oemKey=''
+  try {
+    $lic=Get-WmiObject -Class SoftwareLicensingProduct | Where-Object {$_.PartialProductKey -and $_.Name -match 'Windows'} | Sort-Object LicenseStatus -Descending | Select-Object -First 1
+    if($lic){if([int]$lic.LicenseStatus -eq 1){$licenseStatus='Licenciado'}else{$licenseStatus='No licenciado'};$partialKey=CleanValue -Value $lic.PartialProductKey -Fallback '';$licenseChannel=CleanValue -Value $lic.Description}
+  } catch {}
+  try {$svc=Get-WmiObject -Class SoftwareLicensingService | Select-Object -First 1; if($svc -and $svc.PSObject.Properties['OA3xOriginalProductKey']){$oemKey=CleanValue -Value $svc.OA3xOriginalProductKey -Fallback ''}} catch {}
+  $boardManufacturer=CleanValue -Value $board.Manufacturer -Fallback ''\r\n  $boardProduct=CleanValue -Value $board.Product -Fallback ''\r\n  $motherboard=("{0} {1}" -f $boardManufacturer,$boardProduct).Trim(); if([string]::IsNullOrEmpty($motherboard)){$motherboard='No detectado'}\r\n  $payload=@{\r\n    office_id=$OfficeId; equipment_id=$EquipmentId; office_name=$OfficeName; equipment_name=$EquipmentName;\r\n    brand=(CleanValue -Value $cs.Manufacturer); model=(CleanValue -Value $cs.Model); processor=(CleanValue -Value $cpu.Name); cores=[int]$cpu.NumberOfCores;\r\n    operating_system=("{0} ({1})" -f (CleanValue -Value $os.Caption),$arch); windows_version=(CleanValue -Value $displayVersion); windows_build=(CleanValue -Value $os.BuildNumber); windows_install_date=(CleanValue -Value $installDate);\r\n    motherboard=$motherboard; ram_gb=[int]$ramGB; ram_type=$ramType; storage=$storage; graphics=(CleanValue -Value $gpu.Name);\r\n    hostname=$env:COMPUTERNAME; full_device_name=$fullName; domain_workgroup=(CleanValue -Value $cs.Domain); system_type=(CleanValue -Value $cs.SystemType);\r\n    device_uuid=(CleanValue -Value $csp.UUID); product_id=(CleanValue -Value $productId); bios_serial=(CleanValue -Value $bios.SerialNumber); bios_version=(CleanValue -Value (($bios.SMBIOSBIOSVersion -join ' '))); windows_license_status=$licenseStatus; windows_license_channel=$licenseChannel; windows_partial_product_key=$partialKey; windows_oem_key=$oemKey; collector_version='0.3.3'\r\n  }\r\n  Add-Type -AssemblyName System.Web.Extensions\r\n  $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer\r\n  $request=@{p_payload=$payload}\r\n  $json=$serializer.Serialize($request)\r\n  $wc=New-Object System.Net.WebClient\r\n  $wc.Encoding=[Text.Encoding]::UTF8\r\n  $wc.Headers.Add('apikey',$AnonKey)\r\n  $wc.Headers.Add('Authorization',('Bearer '+$AnonKey))\r\n  $wc.Headers.Add('Content-Type','application/json')\r\n  try {\r\n    $result=$wc.UploadString($SupabaseEndpoint,'POST',$json)\r\n  } catch [System.Net.WebException] {\r\n    $resp=$_.Exception.Response\r\n    if($resp -and [int]$resp.StatusCode -eq 404){\r\n      Write-Host 'RPC no disponible; usando registro compatible...' -ForegroundColor Yellow\r\n      $FallbackEndpoint=$SupabaseEndpoint -replace '/rpc/register_inventory$','/inventories'\r\n      $wc.Headers['Prefer']='return=representation'\r\n      $fallback=$serializer.Serialize($payload)\r\n      $result=$wc.UploadString($FallbackEndpoint,'POST',$fallback)\r\n    } else { throw }\r\n  }\r\n  Write-Host ''\r\n  if($result -match 'already_registered'){\r\n    Write-Host 'INVENTARIO YA COMPLETADO.' -ForegroundColor Green\r\n    Write-Host 'Este equipo ya fue relevado correctamente 3 veces y ya se encuentra cargado al inventario principal de la Direccion de Informatica - Ministerio de Educacion Tucuman.' -ForegroundColor Yellow\r\n  } else {\r\n    $attempt=''; if($result -match '"attempt_count"\\s*:\\s*(\\d+)'){$attempt=$matches[1]}\r\n    Write-Host 'OK - Datos guardados correctamente.' -ForegroundColor Green\r\n    if($attempt){Write-Host ('Ejecucion registrada: '+$attempt+' de 3.') -ForegroundColor Cyan}\r\n    Write-Host ('Equipo: '+$EquipmentName+' | Oficina: '+$OfficeName) -ForegroundColor Gray\r\n  }\r\n  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 0\r\n} catch {\r\n  Write-Host ''\r\n  Write-Host ('ERROR: '+$_.Exception.Message) -ForegroundColor Red\r\n  Write-Host 'Verifique la conexion a Internet e intente nuevamente.' -ForegroundColor Yellow\r\n  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 1\r\n}\r\n`;
   }
   function utf8Base64(text){const bytes=new TextEncoder().encode('\uFEFF'+text);let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(bin)}
   function buildBat(psScript,equipmentName){
@@ -61,14 +67,8 @@
   function downloadBlob(content,name,type){const b=new Blob([content],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
   async function getSubmissionStatus(equipmentId){
     const {data,error}=await sb.rpc('inventory_submission_status',{p_equipment_id:equipmentId});
-    if(!error) return Array.isArray(data)?(data[0]||{}):(data||{});
-    const msg=String(error.message||'');
-    if(/Could not find the function|404|PGRST202/i.test(msg)){
-      const {data:row,error:qerr}=await sb.from('inventories').select('submission_count,last_submitted_at').eq('equipment_id',equipmentId).order('last_submitted_at',{ascending:false}).limit(1).maybeSingle();
-      if(qerr && !/row-level security|permission/i.test(String(qerr.message||''))) throw qerr;
-      return {attempt_count:Number(row?.submission_count||0),max_attempts:3,completed:Number(row?.submission_count||0)>=3,last_submitted_at:row?.last_submitted_at||null};
-    }
-    throw error;
+    if(error) throw error;
+    return Array.isArray(data)?(data[0]||{}):(data||{});
   }
   async function generateCollector(){
     const officeId=$('#officeSelect').value,equipmentId=$('#equipmentSelect').value;
@@ -89,14 +89,14 @@
       startPolling(equipmentId,count);
       Swal.fire({...swalBase,icon:'info',title:'Recopilador descargado',html:`Abrí <b>${safeText(filename)}</b> con doble clic.<br><br>Ejecución permitida: <b>${count+1} de 3</b>. Windows puede mostrar una advertencia por tratarse de un archivo descargado.`,confirmButtonText:'Entendido'});
     }catch(e){
-      console.warn('Validación previa no disponible, se habilita descarga del recopilador:',e);
+      console.warn('No se pudo consultar inventory_submission_status; se generará el recopilador igualmente.',e);
       const bat=buildBat(collectorPowerShell(officeId,equipmentId,officeName,equipmentName),equipmentName);
       const filename=`MEDTUC_${equipmentName.replace(/[^a-z0-9_-]/gi,'_')}.bat`;
       downloadBlob(bat,filename,'application/x-bat;charset=utf-8');
       $('#syncPanel').classList.remove('hidden');
-      $('#syncText').textContent=`Ejecutá ${filename} con doble clic. El servidor validará el máximo de 3 ejecuciones al registrar.`;
+      $('#syncText').textContent=`Ejecutá ${filename} con doble clic. El servidor validará y registrará el equipo.`;
       startPolling(equipmentId,0);
-      Swal.fire({...swalBase,icon:'warning',title:'Recopilador descargado',html:`No se pudo consultar el estado previo del equipo, pero el recopilador fue generado correctamente.<br><br>El servidor controlará el máximo de <b>3 ejecuciones</b> al recibir los datos.`,confirmButtonText:'Entendido'});
+      Swal.fire({...swalBase,icon:'warning',title:'Recopilador descargado',html:`Abrí <b>${safeText(filename)}</b> con doble clic.<br><br>No se pudo consultar el contador previo, pero el recopilador fue generado. El servidor aplicará el límite de 3 ejecuciones.`,confirmButtonText:'Entendido'});
     }
   }
   function startPolling(equipmentId,previousCount=0){
@@ -119,18 +119,142 @@
     state.role=role.role||'admin';$('#roleChip').textContent=state.role==='superadmin'?'SuperAdmin':(role.display_name||'Administrador');$('#settingsTabBtn').classList.toggle('hidden',state.role!=='superadmin');$('#usersTabBtn').classList.toggle('hidden',state.role!=='superadmin');$('#loginCard').classList.add('hidden');$('#dashboard').classList.remove('hidden');$('#btnLogout').classList.remove('hidden');await Promise.all([refreshStats(),loadInventory()]);if(state.role==='superadmin')await loadUpdateHistory();
   }
   async function refreshStats(){const [{count:total},{count:offices},{data:last}]=await Promise.all([sb.from('inventories').select('*',{count:'exact',head:true}),sb.from('offices').select('*',{count:'exact',head:true}),sb.from('inventories').select('created_at').order('created_at',{ascending:false}).limit(1)]);$('#statTotal').textContent=total||0;$('#statOffices').textContent=offices||0;$('#statLast').textContent=last?.[0]?fmtDate(last[0].created_at):'—'}
-  const filterOr=()=>{const f=state.filter.replace(/[,%()]/g,' ').trim();return `office_name.ilike.%${f}%,equipment_name.ilike.%${f}%,brand.ilike.%${f}%,model.ilike.%${f}%,processor.ilike.%${f}%,operating_system.ilike.%${f}%,windows_version.ilike.%${f}%,hostname.ilike.%${f}%`}
-  async function loadInventory(){
-    const from=state.page*state.size,to=from+state.size-1;let q=sb.from('inventories').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(from,to);if(state.filter)q=q.or(filterOr());const {data,error,count}=await q;if(error)return toast('error','Error al consultar',error.message);state.rows=data||[];state.total=count||0;
-    $('#inventoryBody').innerHTML=state.rows.map(r=>`<tr><td>${safeText(fmtDate(r.created_at))}</td><td>${safeText(r.office_name)}</td><td>${safeText([r.brand,r.model].filter(Boolean).join(' · '))}</td><td>${safeText(r.equipment_name)}</td><td>${safeText((r.submission_count||1)+' / 3')}</td><td>${safeText(r.full_device_name||r.hostname)}</td><td>${safeText(r.processor)}</td><td>${safeText(r.cores)}</td><td>${safeText(r.operating_system)}</td><td>${safeText(r.windows_version)}</td><td>${safeText(r.windows_build)}</td><td>${safeText(r.system_type)}</td><td>${safeText(r.motherboard)}</td><td>${safeText(r.ram_gb==null?'':r.ram_gb+' GB')}</td><td>${safeText(r.ram_type)}</td><td>${safeText(r.storage)}</td><td>${safeText(r.graphics)}</td><td>${safeText(r.device_uuid)}</td><td>${safeText(r.product_id)}</td></tr>`).join('')||'<tr><td colspan="19">Sin resultados</td></tr>';
-    const pages=Math.max(1,Math.ceil(state.total/state.size));$('#pageInfo').textContent=`${state.total} registros · Página ${state.page+1} de ${pages}`;$('#prevPage').disabled=state.page===0;$('#nextPage').disabled=state.page+1>=pages;
+  const filterOr=()=>{const f=state.filter.replace(/[,%()]/g,' ').trim();return `office_name.ilike.%${f}%,equipment_name.ilike.%${f}%,brand.ilike.%${f}%,model.ilike.%${f}%,processor.ilike.%${f}%,operating_system.ilike.%${f}%,windows_version.ilike.%${f}%,hostname.ilike.%${f}%,windows_license_status.ilike.%${f}%,windows_license_channel.ilike.%${f}%`}
+  const licenseClass = r => {
+    const s=String(r.windows_license_status||'').toLowerCase();
+    if(s.includes('licenciado') && !s.includes('no licenciado')) return 'ok';
+    if(s.includes('no licenciado')) return 'danger';
+    return 'warn';
+  };
+  const licenseLabel = r => {
+    const s=String(r.windows_license_status||'').trim();
+    return s || 'Desconocido';
+  };
+  const inventoryState = r => Number(r.submission_count||1)>=3 ? {cls:'ok',text:'Completo'} : {cls:'info',text:`Pendiente ${Number(r.submission_count||1)}/3`};
+  const actionIcon = (type) => ({
+    view:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Zm10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>',
+    edit:'<svg viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16v4Zm9-13 4 4"/></svg>',
+    delete:'<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg>'
+  }[type]||'');
+
+  function syncSelectionUI(){
+    $$('.row-check').forEach(cb=>{cb.checked=state.selected.has(cb.value)});
+    const all = state.rows.length>0 && state.rows.every(r=>state.selected.has(r.id));
+    const head=$('#selectAllRows'); if(head){head.checked=all;head.indeterminate=!all&&state.rows.some(r=>state.selected.has(r.id))}
+    const n=state.selected.size; $('#selectedCount').textContent=`${n} seleccionado${n===1?'':'s'}`; $('#deleteSelected').disabled=n===0;
   }
+
+  async function loadInventory(){
+    const from=state.page*state.size,to=from+state.size-1;
+    let q=sb.from('inventories').select('*',{count:'exact'}).order('created_at',{ascending:false}).range(from,to);
+    if(state.filter)q=q.or(filterOr());
+    const {data,error,count}=await q;
+    if(error)return toast('error','Error al consultar',error.message);
+    state.rows=data||[];state.total=count||0;
+    $('#inventoryBody').innerHTML=state.rows.map(r=>{
+      const st=inventoryState(r), lc=licenseClass(r);
+      return `<tr data-id="${safeText(r.id)}">
+        <td class="select-cell"><input class="row-check" type="checkbox" value="${safeText(r.id)}" aria-label="Seleccionar ${safeText(r.equipment_name)}"></td>
+        <td><span class="status-badge ${st.cls}">${safeText(st.text)}</span></td>
+        <td>${safeText(fmtDate(r.created_at))}</td>
+        <td>${safeText(r.office_name)}</td>
+        <td>${safeText([r.brand,r.model].filter(Boolean).join(' · '))}</td>
+        <td>${safeText(r.equipment_name)}</td>
+        <td>${safeText((r.submission_count||1)+' / 3')}</td>
+        <td>${safeText(r.full_device_name||r.hostname)}</td>
+        <td>${safeText(r.processor)}</td>
+        <td>${safeText(r.cores)}</td>
+        <td>${safeText(r.operating_system)}</td>
+        <td>${safeText(r.windows_version)}</td>
+        <td>${safeText(r.windows_build)}</td>
+        <td>${safeText(r.system_type)}</td>
+        <td>${safeText(r.motherboard)}</td>
+        <td>${safeText(r.ram_gb==null?'':r.ram_gb+' GB')}</td>
+        <td>${safeText(r.ram_type)}</td>
+        <td>${safeText(r.storage)}</td>
+        <td>${safeText(r.graphics)}</td>
+        <td>${safeText(r.device_uuid)}</td>
+        <td>${safeText(r.product_id)}</td>
+        <td><span class="status-badge ${lc}">${safeText(licenseLabel(r))}</span>${r.windows_partial_product_key?`<small class="cell-sub">•••••-${safeText(r.windows_partial_product_key)}</small>`:''}</td>
+        <td class="actions-cell">
+          <button class="action-btn view" data-action="view" data-id="${safeText(r.id)}" title="Ver">${actionIcon('view')}</button>
+          <button class="action-btn edit" data-action="edit" data-id="${safeText(r.id)}" title="Editar">${actionIcon('edit')}</button>
+          <button class="action-btn delete" data-action="delete" data-id="${safeText(r.id)}" title="Eliminar">${actionIcon('delete')}</button>
+        </td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="22">Sin resultados</td></tr>';
+    const pages=Math.max(1,Math.ceil(state.total/state.size));
+    $('#pageInfo').textContent=`${state.total} registros · Página ${state.page+1} de ${pages}`;
+    $('#prevPage').disabled=state.page===0;$('#nextPage').disabled=state.page+1>=pages;
+    $$('.row-check').forEach(cb=>cb.onchange=()=>{cb.checked?state.selected.add(cb.value):state.selected.delete(cb.value);syncSelectionUI()});
+    $$('[data-action]').forEach(btn=>btn.onclick=()=>inventoryAction(btn.dataset.action,btn.dataset.id));
+    syncSelectionUI();
+  }
+
+  async function inventoryAction(action,id){
+    const row=state.rows.find(r=>r.id===id) || (await sb.from('inventories').select('*').eq('id',id).maybeSingle()).data;
+    if(!row)return toast('error','Registro no encontrado');
+    if(action==='view') return showInventory(row);
+    if(action==='edit') return editInventory(row);
+    if(action==='delete') return deleteInventory([id], row.equipment_name);
+  }
+
+  function detailPair(label,value,cls=''){
+    return `<div class="detail-item ${cls}"><span>${safeText(label)}</span><b>${safeText(value||'—')}</b></div>`;
+  }
+  async function showInventory(r){
+    const lc=licenseClass(r);
+    const html=`<div class="inventory-detail-grid">
+      ${detailPair('Oficina',r.office_name)}${detailPair('Equipo',r.equipment_name)}
+      ${detailPair('Marca / Modelo',[r.brand,r.model].filter(Boolean).join(' · '))}
+      ${detailPair('Procesador',r.processor)}${detailPair('Núcleos',r.cores)}
+      ${detailPair('RAM',r.ram_gb?`${r.ram_gb} GB · ${r.ram_type||''}`:r.ram_type)}
+      ${detailPair('Almacenamiento',r.storage)}${detailPair('Gráfica',r.graphics)}
+      ${detailPair('Sistema Operativo',r.operating_system)}${detailPair('Versión / Build',[r.windows_version,r.windows_build].filter(Boolean).join(' · '))}
+      ${detailPair('Placa Madre',r.motherboard)}${detailPair('UUID',r.device_uuid)}
+      ${detailPair('Product ID',r.product_id)}${detailPair('BIOS',[r.bios_serial,r.bios_version].filter(Boolean).join(' · '))}
+      <div class="detail-item span-2"><span>Licencia de Windows</span><b><span class="status-badge ${lc}">${safeText(licenseLabel(r))}</span></b></div>
+      ${detailPair('Canal de licencia',r.windows_license_channel)}
+      ${detailPair('Clave parcial',r.windows_partial_product_key?`•••••-${r.windows_partial_product_key}`:'No detectada')}
+      ${detailPair('Clave OEM',r.windows_oem_key||'No detectada','span-2')}
+    </div>`;
+    await Swal.fire({...swalBase,title:`${safeText(r.equipment_name||'Equipo')}`,html,width:900,confirmButtonText:'Cerrar'});
+  }
+
+  async function editInventory(r){
+    const {value:v}=await Swal.fire({...swalBase,title:`Editar ${safeText(r.equipment_name)}`,width:760,html:`<div class="swal-form two-cols">
+      <input id="edOffice" class="swal2-input" placeholder="Oficina" value="${safeText(r.office_name||'')}">
+      <input id="edEquipment" class="swal2-input" placeholder="Equipo" value="${safeText(r.equipment_name||'')}">
+      <input id="edBrand" class="swal2-input" placeholder="Marca" value="${safeText(r.brand||'')}">
+      <input id="edModel" class="swal2-input" placeholder="Modelo" value="${safeText(r.model||'')}">
+      <input id="edLicense" class="swal2-input" placeholder="Estado licencia" value="${safeText(r.windows_license_status||'')}">
+      <input id="edChannel" class="swal2-input" placeholder="Canal licencia" value="${safeText(r.windows_license_channel||'')}">
+    </div>`,showCancelButton:true,confirmButtonText:'Guardar cambios',cancelButtonText:'Cancelar',focusConfirm:false,
+      preConfirm:()=>({office_name:safeName($('#edOffice').value),equipment_name:safeName($('#edEquipment').value),brand:safeName($('#edBrand').value),model:safeName($('#edModel').value),windows_license_status:safeName($('#edLicense').value),windows_license_channel:safeName($('#edChannel').value)})});
+    if(!v)return;
+    const {error}=await sb.from('inventories').update(v).eq('id',r.id);
+    if(error)return toast('error','No se pudo editar',error.message);
+    await loadInventory();await refreshStats();toast('success','Registro actualizado');
+  }
+
+  async function deleteInventory(ids,label='los registros seleccionados'){
+    if(!ids.length)return;
+    const c=await Swal.fire({...swalBase,icon:'warning',title:'Eliminar del inventario',html:`Se eliminará <b>${safeText(label)}</b> del inventario principal.<br><br>Esta acción no se puede deshacer.`,showCancelButton:true,confirmButtonText:'Sí, eliminar',cancelButtonText:'Cancelar',confirmButtonColor:'#d65d67'});
+    if(!c.isConfirmed)return;
+    const {error}=await sb.from('inventories').delete().in('id',ids);
+    if(error)return toast('error','No se pudo eliminar',error.message);
+    ids.forEach(id=>state.selected.delete(id));
+    if(state.rows.length===ids.length && state.page>0)state.page--;
+    await Promise.all([loadInventory(),refreshStats()]);
+    toast('success','Eliminado correctamente');
+  }
+
   async function fetchAllFiltered(){let q=sb.from('inventories').select('*').order('created_at',{ascending:false});if(state.filter)q=q.or(filterOr());const {data,error}=await q.limit(10000);if(error)throw error;return data||[]}
   const csvCell=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const exportFields=r=>[fmtDate(r.created_at),r.office_name,r.brand,r.model,r.equipment_name,`${r.submission_count||1}/3`,r.full_device_name,r.processor,r.cores,r.operating_system,r.windows_version,r.windows_build,r.system_type,r.motherboard,r.ram_gb,r.ram_type,r.storage,r.graphics,r.device_uuid,r.product_id,r.bios_serial,r.bios_version,r.domain_workgroup];
-  async function exportCSV(){try{const rows=await fetchAllFiltered();const headers=['Fecha','Oficina','Marca','Modelo','NombreEquipo','Ejecuciones','NombreCompleto','Procesador','Nucleos','SistemaOperativo','VersionWindows','Build','TipoSistema','PlacaMadre','RAM_GB','RAM_Tipo','Almacenamiento','TarjetaGrafica','UUID','ProductId','BIOS_Serial','BIOS_Version','Dominio_Workgroup'];const lines=[headers.map(csvCell).join(';'),...rows.map(r=>exportFields(r).map(csvCell).join(';'))];downloadBlob('\uFEFF'+lines.join('\n'),`MEDTUC_Inventario_${stamp()}.csv`,'text/csv;charset=utf-8')}catch(e){toast('error','No se pudo exportar',e.message)}}
+  const exportFields=r=>[fmtDate(r.created_at),r.office_name,r.brand,r.model,r.equipment_name,`${r.submission_count||1}/3`,r.full_device_name,r.processor,r.cores,r.operating_system,r.windows_version,r.windows_build,r.system_type,r.motherboard,r.ram_gb,r.ram_type,r.storage,r.graphics,r.device_uuid,r.product_id,r.windows_license_status,r.windows_license_channel,r.windows_partial_product_key,r.windows_oem_key,r.bios_serial,r.bios_version,r.domain_workgroup];
+  async function exportCSV(){try{const rows=await fetchAllFiltered();const headers=['Fecha','Oficina','Marca','Modelo','NombreEquipo','Ejecuciones','NombreCompleto','Procesador','Nucleos','SistemaOperativo','VersionWindows','Build','TipoSistema','PlacaMadre','RAM_GB','RAM_Tipo','Almacenamiento','TarjetaGrafica','UUID','ProductId','EstadoLicenciaWindows','CanalLicencia','ClaveParcial','ClaveOEM','BIOS_Serial','BIOS_Version','Dominio_Workgroup'];const lines=[headers.map(csvCell).join(';'),...rows.map(r=>exportFields(r).map(csvCell).join(';'))];downloadBlob('\uFEFF'+lines.join('\n'),`MEDTUC_Inventario_${stamp()}.csv`,'text/csv;charset=utf-8')}catch(e){toast('error','No se pudo exportar',e.message)}}
   async function imageDataUrl(url){const res=await fetch(url);if(!res.ok)throw new Error('No se pudo cargar el logo institucional.');const blob=await res.blob();return await new Promise((ok,fail)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=fail;r.readAsDataURL(blob)})}
-  async function exportPDF(){try{const rows=await fetchAllFiltered();const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});let logo=null;try{logo=await imageDataUrl('assets/img/ministerio-educacion-tucuman.png')}catch{};if(logo)doc.addImage(logo,'PNG',12,8,48,14,undefined,'FAST');doc.setTextColor(20,30,45);doc.setFontSize(18);doc.text('MEDTUC · Inventario Centralizado de Equipos',66,15);doc.setFontSize(8);doc.text(`Reporte generado: ${new Date().toLocaleString('es-AR')}  |  Usuario: ${state.user?.email||'Administrador'}  |  Registros: ${rows.length}`,66,21);doc.autoTable({startY:29,margin:{left:10,right:10},styles:{fontSize:5,cellPadding:1.15,overflow:'linebreak'},headStyles:{fillColor:[20,58,91]},head:[['Fecha','Oficina','Marca/Modelo','Equipo','Ejecuciones','Nombre completo','Procesador','Núcleos','SO','Versión','Build','Sistema','Placa madre','RAM','Tipo','Almacenamiento','Gráfica','UUID','Product ID']],body:rows.map(r=>[fmtDate(r.created_at),r.office_name,[r.brand,r.model].filter(Boolean).join(' · '),r.equipment_name,`${r.submission_count||1}/3`,r.full_device_name||r.hostname,r.processor,r.cores,r.operating_system,r.windows_version,r.windows_build,r.system_type,r.motherboard,`${r.ram_gb??''} GB`,r.ram_type,r.storage,r.graphics,r.device_uuid,r.product_id]),didDrawPage:()=>{doc.setFontSize(6);doc.setTextColor(100);doc.text(`RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina · v${APP_VERSION} · by Ing. Fernando Gambino`,12,doc.internal.pageSize.height-6)}});doc.save(`MEDTUC_Inventario_${stamp()}.pdf`)}catch(e){toast('error','No se pudo exportar',e.message)}}
+  async function exportPDF(){try{const rows=await fetchAllFiltered();const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});let logo=null;try{logo=await imageDataUrl('assets/img/ministerio-educacion-tucuman.png')}catch{};if(logo)doc.addImage(logo,'PNG',12,8,48,14,undefined,'FAST');doc.setTextColor(20,30,45);doc.setFontSize(18);doc.text('MEDTUC · Inventario Centralizado de Equipos',66,15);doc.setFontSize(8);doc.text(`Reporte generado: ${new Date().toLocaleString('es-AR')}  |  Usuario: ${state.user?.email||'Administrador'}  |  Registros: ${rows.length}`,66,21);doc.autoTable({startY:29,margin:{left:10,right:10},styles:{fontSize:4.5,cellPadding:1.05,overflow:'linebreak'},headStyles:{fillColor:[20,58,91]},head:[['Fecha','Oficina','Marca/Modelo','Equipo','Estado','Ejec.','Procesador','SO','Versión','RAM','Almacenamiento','Gráfica','Licencia','Canal','Clave parcial']],body:rows.map(r=>[fmtDate(r.created_at),r.office_name,[r.brand,r.model].filter(Boolean).join(' · '),r.equipment_name,inventoryState(r).text,`${r.submission_count||1}/3`,r.processor,r.operating_system,r.windows_version,`${r.ram_gb??''} GB`,r.storage,r.graphics,licenseLabel(r),r.windows_license_channel||'',r.windows_partial_product_key?`•••••-${r.windows_partial_product_key}`:'']),didDrawPage:()=>{doc.setFontSize(6);doc.setTextColor(100);doc.text(`RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina · v${APP_VERSION} · by Ing. Fernando Gambino`,12,doc.internal.pageSize.height-6)}});doc.save(`MEDTUC_Inventario_${stamp()}.pdf`)}catch(e){toast('error','No se pudo exportar',e.message)}}
   function stamp(){const d=new Date();return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`}
 
   function compareVersions(a,b){const A=String(a).split('.').map(Number),B=String(b).split('.').map(Number);for(let i=0;i<Math.max(A.length,B.length);i++){const x=A[i]||0,y=B[i]||0;if(x>y)return 1;if(x<y)return -1}return 0}
@@ -144,43 +268,131 @@
   }
   function patchUrl(){if(!state.availablePatch)return null;const f=state.availablePatch.file;if(/^https?:\/\//i.test(f))return f;return baseUrl()+String(f).replace(/^\//,'')}
   function downloadPatch(){const u=patchUrl();if(!u)return;window.open(u,'_blank','noopener')}
-  async function handlePatchFile(file){
-    if(state.role!=='superadmin')return toast('error','Acceso restringido','Solo SuperAdmin puede adjuntar actualizaciones.');
+  function handlePatchFile(file){
     if(!file)return;
-    if(!/\.zip$/i.test(file.name))return toast('warning','Archivo no válido','Seleccioná un patch .ZIP.');
+    if(!/\.zip$/i.test(file.name))return toast('error','Actualización inválida','Seleccioná un archivo .ZIP.');
     state.localPatchFile=file;
-    setUpdateStatus('warn','Patch adjuntado',`${file.name} · ${(file.size/1024).toFixed(1)} KB`);
-    $('#updateDetails').innerHTML=`<h3>Patch local</h3><div class="muted">${safeText(file.name)} · ${(file.size/1024).toFixed(1)} KB</div><p>Listo para aplicar. En localhost se descargará una copia preparada para reemplazo manual; en GitHub Pages se intentará usar el actualizador seguro.</p>`;
+    state.availablePatch={from:APP_VERSION,to:guessPatchTarget(file.name)||'0.3.3',file:file.name,title:'Actualización local adjuntada'};
+    setUpdateStatus('warn','Actualización adjuntada',`${file.name} · ${(file.size/1024).toFixed(1)} KB`);
+    $('#updateDetails').innerHTML=`<h3>${safeText(file.name)}</h3><div class="muted">Archivo listo para instalar. El sistema validará el ZIP antes de enviarlo al actualizador seguro.</div>`;
     $('#updateDetails').classList.remove('hidden');
     $('#applyPatchBtn').classList.remove('hidden');
+    $('#applyPatchBtn').textContent='Instalar actualización';
   }
-  async function applyLocalPatch(){
-    const file=state.localPatchFile;if(!file)return false;
+  function guessPatchTarget(name){
+    const m=String(name||'').match(/(?:to|a)[_-]?v?(\d+\.\d+\.\d+)/i)||String(name||'').match(/v?(\d+\.\d+\.\d+)(?=\.zip$)/i);
+    return m?m[1]:null;
+  }
+  async function fileToBase64(file){
+    const buf=await file.arrayBuffer();
+    let bin=''; const bytes=new Uint8Array(buf),chunk=0x8000;
+    for(let i=0;i<bytes.length;i+=chunk)bin+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+    return btoa(bin);
+  }
+  async function validatePatchZip(file){
+    if(!window.JSZip) return {ok:true,files:[]};
+    const zip=await JSZip.loadAsync(file);
+    const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir);
+    const required=['index.html','assets/js/app.js'];
+    const missing=required.filter(r=>!names.includes(r));
+    if(missing.length) throw new Error(`El ZIP no contiene archivos esenciales: ${missing.join(', ')}`);
+    return {ok:true,files:names};
+  }
+  async function installLocalPatch(file){
+    await validatePatchZip(file);
     if(location.hostname==='127.0.0.1'||location.hostname==='localhost'){
-      const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-      await Swal.fire({...swalBase,icon:'info',title:'Patch preparado',html:'Estás ejecutando la PWA en <b>localhost</b>. El navegador no puede sobrescribir los archivos del proyecto por seguridad.<br><br>Extraé el ZIP sobre la carpeta del proyecto, aceptá reemplazar los archivos y luego hacé <b>Ctrl + F5</b>.',confirmButtonText:'Entendido'});
-      return true;
+      if('showDirectoryPicker' in window && window.JSZip){
+        const confirm=await Swal.fire({...swalBase,icon:'question',title:'Instalar actualización',html:'Seleccioná la <b>carpeta raíz del proyecto</b>. Se reemplazarán únicamente los archivos incluidos en el ZIP.',showCancelButton:true,confirmButtonText:'Seleccionar carpeta e instalar',cancelButtonText:'Cancelar'});
+        if(!confirm.isConfirmed)return false;
+        const root=await window.showDirectoryPicker({mode:'readwrite'});
+        const zip=await JSZip.loadAsync(file);
+        for(const [name,entry] of Object.entries(zip.files)){
+          if(entry.dir||name.startsWith('supabase/')||/^LEEME/i.test(name))continue;
+          const parts=name.split('/');let dir=root;
+          for(const part of parts.slice(0,-1))dir=await dir.getDirectoryHandle(part,{create:true});
+          const fh=await dir.getFileHandle(parts.at(-1),{create:true});const w=await fh.createWritable();await w.write(await entry.async('uint8array'));await w.close();
+        }
+        return true;
+      }
+      await Swal.fire({...swalBase,icon:'info',title:'Actualización preparada',html:'Este navegador no permite escribir directamente en la carpeta del proyecto. Extraé el ZIP sobre la raíz del proyecto y reemplazá los archivos. Luego hacé <b>Ctrl + F5</b>.',confirmButtonText:'Entendido'});
+      return false;
     }
-    return false;
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session)throw new Error('Sesión expirada. Volvé a iniciar sesión.');
+    const b64=await fileToBase64(file);
+    const target=guessPatchTarget(file.name)||state.availablePatch?.to||'0.3.3';
+    const res=await fetch(C.SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/medtuc-updater',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`,'apikey':C.SUPABASE_ANON_KEY},body:JSON.stringify({action:'apply_zip',zip_base64:b64,file_name:file.name,from_version:APP_VERSION,to_version:target})});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok){
+      if(res.status===404)throw new Error('El actualizador seguro medtuc-updater todavía no está desplegado en Supabase. Este patch incluye la Edge Function para dejar habilitadas las próximas actualizaciones automáticas.');
+      throw new Error(body.error||`HTTP ${res.status}`);
+    }
+    return true;
   }
   async function applyPatch(){
-    if(state.role!=='superadmin')return;
-    if(state.localPatchFile && await applyLocalPatch())return;
-    if(!state.availablePatch)return toast('warning','Sin patch','Adjuntá un patch .ZIP o buscá actualizaciones.');const confirm=await Swal.fire({...swalBase,icon:'warning',title:`Aplicar v${state.availablePatch.to}`,html:'Se enviará el patch a la <b>Supabase Edge Function</b>, que actualizará el repositorio GitHub. Se recomienda conservar un backup del repositorio.',showCancelButton:true,confirmButtonText:'Aplicar actualización',cancelButtonText:'Cancelar'});if(!confirm.isConfirmed)return;
-    try{const {data:{session}}=await sb.auth.getSession();if(!session)throw new Error('Sesión expirada.');Swal.fire({...swalBase,title:'Actualizando…',text:'No cierres esta ventana.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});const res=await fetch(C.SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/medtuc-updater',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`,'apikey':C.SUPABASE_ANON_KEY},body:JSON.stringify({action:'apply',patch_url:patchUrl(),from_version:APP_VERSION,to_version:state.availablePatch.to,sha256:state.availablePatch.sha256||null})});const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body.error||`HTTP ${res.status}`);await Swal.fire({...swalBase,icon:'success',title:'Patch aplicado',html:`Versión <b>${safeText(state.availablePatch.to)}</b> enviada al repositorio.<br>GitHub Pages puede tardar unos instantes en publicar los cambios.`,confirmButtonText:'Recargar'});location.reload(true)}catch(e){Swal.close();toast('error','No se pudo aplicar el patch',e.message)}
+    if(state.role!=='superadmin')return toast('error','Acceso restringido','Solo SuperAdmin puede instalar actualizaciones.');
+    const file=state.localPatchFile || $('#patchFileInput')?.files?.[0] || null;
+    if(file){
+      try{
+        const c=await Swal.fire({...swalBase,icon:'warning',title:'Instalar actualización',html:`Se instalará <b>${safeText(file.name)}</b>.<br><br>Se recomienda conservar una copia del proyecto antes de continuar.`,showCancelButton:true,confirmButtonText:'Instalar actualización',cancelButtonText:'Cancelar'});
+        if(!c.isConfirmed)return;
+        Swal.fire({...swalBase,title:'Instalando actualización…',text:'No cierres esta ventana.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+        const ok=await installLocalPatch(file);
+        Swal.close();
+        if(ok){await Swal.fire({...swalBase,icon:'success',title:'Actualización instalada',text:'La actualización fue procesada correctamente. La aplicación se recargará.',confirmButtonText:'Recargar'});location.reload(true)}
+      }catch(e){Swal.close();toast('error','No se pudo instalar',e.message)}
+      return;
+    }
+    if(!state.availablePatch)return toast('warning','Sin actualización','Adjuntá una actualización .ZIP o buscá actualizaciones.');
+    const confirm=await Swal.fire({...swalBase,icon:'warning',title:`Instalar v${state.availablePatch.to}`,showCancelButton:true,confirmButtonText:'Instalar actualización',cancelButtonText:'Cancelar'});if(!confirm.isConfirmed)return;
+    try{const {data:{session}}=await sb.auth.getSession();if(!session)throw new Error('Sesión expirada.');Swal.fire({...swalBase,title:'Instalando actualización…',text:'No cierres esta ventana.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});const res=await fetch(C.SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/medtuc-updater',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`,'apikey':C.SUPABASE_ANON_KEY},body:JSON.stringify({action:'apply',patch_url:patchUrl(),from_version:APP_VERSION,to_version:state.availablePatch.to,sha256:state.availablePatch.sha256||null})});const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body.error||`HTTP ${res.status}`);await Swal.fire({...swalBase,icon:'success',title:'Actualización instalada',html:`Versión <b>${safeText(state.availablePatch.to)}</b> enviada al repositorio.`,confirmButtonText:'Recargar'});location.reload(true)}catch(e){Swal.close();toast('error','No se pudo instalar',e.message)}
   }
   async function loadUpdateHistory(){if(!sb||state.role!=='superadmin')return;const {data}=await sb.from('update_history').select('from_version,to_version,status,created_at,applied_by_email').order('created_at',{ascending:false}).limit(20);$('#updateHistory').innerHTML=(data||[]).map(x=>`<div class="history-item"><div><b>v${safeText(x.from_version)} → v${safeText(x.to_version)}</b><small>${safeText(x.applied_by_email||'SuperAdmin')}</small></div><div><b>${safeText(x.status)}</b><small>${safeText(fmtDate(x.created_at))}</small></div></div>`).join('')||'<span class="muted">Sin registros.</span>'}
 
-  async function adminFunction(action,payload={}){if(state.role!=='superadmin')throw new Error('Solo SuperAdmin puede gestionar administradores.');const {data:{session}}=await sb.auth.getSession();if(!session)throw new Error('Sesión expirada.');const res=await fetch(C.SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/medtuc-admins',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`,'apikey':C.SUPABASE_ANON_KEY},body:JSON.stringify({action,...payload})});const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(body.error||`HTTP ${res.status}`);return body}
-  async function loadAdmins(){if(state.role!=='superadmin')return;const body=$('#adminUsersBody');body.innerHTML='<tr><td colspan="4">Cargando…</td></tr>';try{const data=await adminFunction('list');body.innerHTML=(data.users||[]).map(u=>`<tr><td>${safeText(u.display_name||'—')}</td><td>${safeText(u.email||'—')}</td><td><span class="role-badge ${u.role==='superadmin'?'super':''}">${safeText(u.role==='superadmin'?'SuperAdmin':'Administrador')}</span></td><td>${safeText(fmtDate(u.created_at))}</td></tr>`).join('')||'<tr><td colspan="4">Sin administradores.</td></tr>'}catch(e){body.innerHTML='<tr><td colspan="4">No se pudo cargar el listado.</td></tr>';toast('error','Administradores',e.message)}}
-  async function addAdmin(){if(state.role!=='superadmin')return toast('error','Acceso restringido','Solo SuperAdmin puede agregar administradores.');const {value:v}=await Swal.fire({...swalBase,title:'Agregar administrador',html:'<div class="swal-form"><input id="saName" class="swal2-input" placeholder="Nombre y apellido"><input id="saEmail" class="swal2-input" type="email" placeholder="Email"><input id="saPass" class="swal2-input" type="password" placeholder="Contraseña inicial (mín. 8)"></div>',showCancelButton:true,confirmButtonText:'Crear administrador',cancelButtonText:'Cancelar',focusConfirm:false,preConfirm:()=>{const display_name=safeName(document.getElementById('saName').value),email=document.getElementById('saEmail').value.trim(),password=document.getElementById('saPass').value;if(!display_name)return Swal.showValidationMessage('Ingresá el nombre.');if(!/^\S+@\S+\.\S+$/.test(email))return Swal.showValidationMessage('Ingresá un email válido.');if(password.length<8)return Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');return{display_name,email,password}}});if(!v)return;try{Swal.fire({...swalBase,title:'Creando administrador…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});await adminFunction('create',v);Swal.close();await loadAdmins();toast('success','Administrador creado',`${v.email} ya puede iniciar sesión.`)}catch(e){Swal.close();toast('error','No se pudo crear',e.message)}}
+  async function loadAdmins(){
+    if(state.role!=='superadmin')return;
+    const body=$('#adminUsersBody');body.innerHTML='<tr><td colspan="4">Cargando…</td></tr>';
+    try{
+      const {data,error}=await sb.rpc('superadmin_list_admins');
+      if(error)throw error;
+      body.innerHTML=(data||[]).map(u=>`<tr><td>${safeText(u.display_name||'—')}</td><td>${safeText(u.email||'—')}</td><td><span class="role-badge ${u.role==='superadmin'?'super':''}">${safeText(u.role==='superadmin'?'SuperAdmin':'Administrador')}</span></td><td>${safeText(fmtDate(u.created_at))}</td></tr>`).join('')||'<tr><td colspan="4">Sin administradores.</td></tr>';
+    }catch(e){body.innerHTML='<tr><td colspan="4">No se pudo cargar el listado.</td></tr>';toast('error','Administradores',e.message)}
+  }
+
+  async function addAdmin(){
+    if(state.role!=='superadmin')return toast('error','Acceso restringido','Solo SuperAdmin puede agregar administradores.');
+    const {value:v}=await Swal.fire({...swalBase,title:'Agregar administrador',html:'<div class="swal-form"><input id="saName" class="swal2-input" placeholder="Nombre y apellido"><input id="saEmail" class="swal2-input" type="email" placeholder="Email"><input id="saPass" class="swal2-input" type="password" placeholder="Contraseña inicial (mín. 8)"></div>',showCancelButton:true,confirmButtonText:'Crear administrador',cancelButtonText:'Cancelar',focusConfirm:false,preConfirm:()=>{const display_name=safeName(document.getElementById('saName').value),email=document.getElementById('saEmail').value.trim().toLowerCase(),password=document.getElementById('saPass').value;if(!display_name)return Swal.showValidationMessage('Ingresá el nombre.');if(!/^\S+@\S+\.\S+$/.test(email))return Swal.showValidationMessage('Ingresá un email válido.');if(password.length<8)return Swal.showValidationMessage('La contraseña debe tener al menos 8 caracteres.');return{display_name,email,password}}});
+    if(!v)return;
+    try{
+      Swal.fire({...swalBase,title:'Creando administrador…',text:'Creando la cuenta y asignando el rol Administrador.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+      const isolated=window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
+      const {data:sign,error:signError}=await isolated.auth.signUp({email:v.email,password:v.password,options:{data:{display_name:v.display_name}}});
+      if(signError) throw signError;
+      const newUserId=sign?.user?.id;
+      if(!newUserId) throw new Error('Supabase Auth no devolvió el ID del nuevo usuario. Verificá que el registro de usuarios esté habilitado.');
+      let {error:promoteError}=await sb.rpc('superadmin_promote_admin',{p_user_id:newUserId,p_display_name:v.display_name});
+      if(promoteError && /404|schema cache|function/i.test(String(promoteError.message||promoteError))){
+        const direct=await sb.from('admin_users').upsert({user_id:newUserId,role:'admin',display_name:v.display_name},{onConflict:'user_id'});
+        promoteError=direct.error;
+      }
+      if(promoteError) throw promoteError;
+      Swal.close();await loadAdmins();
+      const needsConfirmation=!sign?.session;
+      toast('success','Administrador creado',needsConfirmation?`${v.email} fue creado como Administrador. Si la confirmación de correo está activa, deberá confirmar su email antes de iniciar sesión.`:`${v.email} ya puede iniciar sesión.`);
+    }catch(e){Swal.close();toast('error','No se pudo crear',e.message)}
+  }
 
   function switchAdminTab(name){if((name==='settings'||name==='users')&&state.role!=='superadmin')return;$$('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-panel').forEach(p=>p.classList.toggle('active',p.dataset.adminPanel===name));if(name==='settings')loadUpdateHistory();if(name==='users')loadAdmins()}
   function showAdmin(){clearInterval(state.poll);$('#userView').classList.remove('active');$('#adminView').classList.add('active');if(state.user)showDashboard()}
   function showUser(){$('#adminView').classList.remove('active');$('#userView').classList.add('active')}
 
   $('#officeSelect').addEventListener('change',renderEquipment);$('#addOffice').onclick=()=>createCatalog('office');$('#addEquipment').onclick=()=>createCatalog('equipment');$('#generateCollector').onclick=generateCollector;$('#btnAdmin').onclick=showAdmin;$('#brandHome').onclick=showUser;$('#btnBack').onclick=showUser;$('#loginBtn').onclick=login;$('#adminPassword').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('#btnLogout').onclick=async()=>{await sb?.auth.signOut();location.reload()};
-  $('#pageSize').onchange=e=>{state.size=+e.target.value;state.page=0;loadInventory()};let filterTimer;$('#filterInput').oninput=e=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{state.filter=e.target.value.trim();state.page=0;loadInventory()},300)};$('#prevPage').onclick=()=>{if(state.page>0){state.page--;loadInventory()}};$('#nextPage').onclick=()=>{const max=Math.max(1,Math.ceil(state.total/state.size));if(state.page+1<max){state.page++;loadInventory()}};$('#exportCsv').onclick=exportCSV;$('#exportPdf').onclick=exportPDF;$$('.admin-tab').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));$('#checkUpdatesBtn').onclick=checkUpdates;$('#downloadPatchBtn').onclick=downloadPatch;$('#patchFileInput').onchange=e=>handlePatchFile(e.target.files?.[0]);$('#applyPatchBtn').onclick=applyPatch;$('#addAdminBtn').onclick=addAdmin;
+  $('#pageSize').onchange=e=>{state.size=+e.target.value;state.page=0;loadInventory()};
+  $('#selectAllRows').onchange=e=>{state.rows.forEach(r=>e.target.checked?state.selected.add(r.id):state.selected.delete(r.id));syncSelectionUI()};
+  $('#selectVisible').onclick=()=>{state.rows.forEach(r=>state.selected.add(r.id));syncSelectionUI()};
+  $('#deselectAll').onclick=()=>{state.selected.clear();syncSelectionUI()};
+  $('#deleteSelected').onclick=()=>deleteInventory([...state.selected],`${state.selected.size} registro${state.selected.size===1?'':'s'} seleccionados`);
+  let filterTimer;$('#filterInput').oninput=e=>{clearTimeout(filterTimer);filterTimer=setTimeout(()=>{state.filter=e.target.value.trim();state.page=0;loadInventory()},300)};$('#prevPage').onclick=()=>{if(state.page>0){state.page--;loadInventory()}};$('#nextPage').onclick=()=>{const max=Math.max(1,Math.ceil(state.total/state.size));if(state.page+1<max){state.page++;loadInventory()}};$('#exportCsv').onclick=exportCSV;$('#exportPdf').onclick=exportPDF;$$('.admin-tab').forEach(b=>b.onclick=()=>switchAdminTab(b.dataset.adminTab));$('#checkUpdatesBtn').onclick=checkUpdates;$('#attachPatchBtn').onclick=()=>$('#patchFileInput').click();$('#patchFileInput').onchange=e=>handlePatchFile(e.target.files?.[0]);$('#downloadPatchBtn').onclick=downloadPatch;$('#applyPatchBtn').onclick=applyPatch;$('#addAdminBtn').onclick=addAdmin;
 
   setBadge();$('#appVersion').textContent=APP_VERSION;$('#installedVersion').textContent=APP_VERSION;loadCatalogs();if('serviceWorker' in navigator && location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});if(sb)sb.auth.getSession().then(({data})=>{if(data.session)state.user=data.session.user});
 })();

@@ -1,17 +1,18 @@
 {
-  "latest_version": "0.3.2",
-  "published_at": "2026-08-18T19:10:00-03:00",
+  "latest_version": "0.3.3",
+  "published_at": "2026-08-19T00:30:00-03:00",
   "patches": [
     {
-      "from": "0.3.1",
-      "to": "0.3.2",
-      "title": "Patch de reparación y actualizador manual",
-      "file": "updates/MEDTUC_patch_0.3.1_to_0.3.2.zip",
+      "from": "0.3.2",
+      "to": "0.3.3",
+      "file": "updates/MEDTUC_patch_0.3.2_to_0.3.3_FINAL.zip",
+      "title": "Inventario, licencias, administradores y updater corregidos",
       "changelog": [
-        "Corrige RPC inventory_submission_status y 404 de update_history",
-        "Permite descargar el recopilador aunque falle la validación previa",
-        "Agrega Adjuntar patch .ZIP en Configuraciones > Actualizaciones",
-        "Uniforma footer RELEVAMIENTO MANAGER"
+        "Corrige registro del recopilador y fallback ante RPC no disponible",
+        "Agrega licencia de Windows y estados visuales",
+        "Agrega selección múltiple y acciones Ver/Editar/Eliminar",
+        "Corrige creación de administradores SuperAdmin",
+        "Corrige Instalador de Actualizaciones"
       ]
     }
   ]
