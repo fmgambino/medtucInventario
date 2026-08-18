@@ -1,24 +1,17 @@
 {
-  "latest_version": "0.3.1",
-  "published_at": "2026-08-18T18:40:00-03:00",
-  "minimum_supported_version": "0.3.0",
+  "latest_version": "0.3.2",
+  "published_at": "2026-08-18T19:10:00-03:00",
   "patches": [
     {
-      "from": "0.3.0",
-      "to": "0.3.1",
-      "title": "Corrección del recopilador + máximo 3 relevamientos + SuperAdmin",
-      "file": "updates/MEDTUC_patch_0.3.0_to_0.3.1.zip",
-      "sha256": null,
-      "size_human": "pendiente",
-      "requires_backend_migration": "supabase/migrations/003_v0.3.1.sql",
+      "from": "0.3.1",
+      "to": "0.3.2",
+      "title": "Patch de reparación y actualizador manual",
+      "file": "updates/MEDTUC_patch_0.3.1_to_0.3.2.zip",
       "changelog": [
-        "Corrige el error del recopilador relacionado con valores OEM como 'To Be Filled By O.E.M.'.",
-        "Refactoriza el PowerShell embebido para Windows 7, 10 y 11 usando WMI y Hashtable compatible.",
-        "Permite hasta 3 ejecuciones por equipo sin duplicar el inventario principal; las ejecuciones 2 y 3 actualizan la misma fila.",
-        "Al alcanzar 3 ejecuciones informa que el equipo ya fue cargado al inventario principal de la Dirección de Informática - Ministerio de Educación Tucumán.",
-        "Configura fernando.m.gambino@gmail.com como SuperAdmin mediante la migración SQL.",
-        "Agrega contador de ejecuciones al área Administrador y a reportes CSV/PDF.",
-        "Agrega la leyenda RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina y autoría en PWA, BAT y PDF."
+        "Corrige RPC inventory_submission_status y 404 de update_history",
+        "Permite descargar el recopilador aunque falle la validación previa",
+        "Agrega Adjuntar patch .ZIP en Configuraciones > Actualizaciones",
+        "Uniforma footer RELEVAMIENTO MANAGER"
       ]
     }
   ]

@@ -1,0 +1,28 @@
+{
+  "latest_version": "0.3.3",
+  "published_at": "2026-08-18T19:20:00-03:00",
+  "minimum_supported_version": "0.3.2",
+  "patches": [
+    {
+      "from": "0.3.2",
+      "to": "0.3.3",
+      "title": "Reparación integral de inventario, administradores y recopilador",
+      "file": "updates/MEDTUC_patch_0.3.2_to_0.3.3.zip",
+      "sha256": null,
+      "size_human": "pendiente",
+      "requires_backend_migration": "supabase/migrations/005_v0.3.3.sql",
+      "changelog": [
+        "Repara RPC register_inventory, inventory_submission_status y check_recent_inventory para eliminar errores 404.",
+        "Agrega todas las columnas del sistema y licencia que faltaban en el esquema actual de inventories.",
+        "Corrige la creación y listado de Administradores sin depender de la Edge Function medtuc-admins ni CORS.",
+        "Solo SuperAdmin puede promover usuarios al rol Administrador.",
+        "Agrega selección por checkbox, seleccionar página, deseleccionar todo y eliminación múltiple.",
+        "Agrega Acciones: Ver, Editar y Eliminar con iconos SVG.",
+        "Agrega estados visuales por colores para relevamiento y licencia Windows.",
+        "Recopila licencia/activación Windows, canal, clave parcial y OEM cuando Windows las expone.",
+        "Permite adjuntar un patch ZIP desde Configuraciones > Actualizaciones.",
+        "El recopilador se descarga aunque falle temporalmente la consulta previa del contador."
+      ]
+    }
+  ]
+}

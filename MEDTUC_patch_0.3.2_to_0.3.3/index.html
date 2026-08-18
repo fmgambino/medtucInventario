@@ -8,7 +8,7 @@
   <title>MEDTUC Inventario</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/css/styles.css?v=0.3.1" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=0.3.3" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -23,7 +23,7 @@
       <span><strong>MEDTUC Inventario</strong><small>Inventario centralizado de equipos</small></span>
     </button>
     <div class="top-actions">
-      <span class="version-pill">v<span id="appVersion">0.3.2</span></span>
+      <span class="version-pill">v<span id="appVersion">0.3.3</span></span>
       <button class="icon-btn" id="btnAdmin" title="Área administrador" aria-label="Área administrador">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Zm8-3.5a6.8 6.8 0 0 0-.08-1l2-1.55-2-3.46-2.45.98a8.3 8.3 0 0 0-1.73-1L15.37 3h-4l-.37 2.97a8.3 8.3 0 0 0-1.73 1L6.82 5.99l-2 3.46L6.82 11a7 7 0 0 0 0 2l-2 1.55 2 3.46 2.45-.98a8.3 8.3 0 0 0 1.73 1l.37 2.97h4l.37-2.97a8.3 8.3 0 0 0 1.73-1l2.45.98 2-3.46-2-1.55c.05-.33.08-.66.08-1Z"/></svg>
       </button>
@@ -106,12 +106,18 @@
           <div class="card glass table-card">
             <div class="toolbar">
               <div class="left-tools"><label>Mostrar <select id="pageSize"><option>5</option><option selected>10</option><option>25</option><option>50</option><option>100</option><option>500</option><option>1000</option></select></label><input id="filterInput" placeholder="Filtrar oficina, equipo, CPU, Windows…" /></div>
-              <div class="right-tools"><button class="secondary" id="exportCsv">Exportar CSV</button><button class="secondary" id="exportPdf">Exportar PDF</button></div>
+              <div class="right-tools">
+                <button class="secondary" id="selectVisible">Seleccionar página</button>
+                <button class="secondary" id="deselectAll">Deseleccionar todo</button>
+                <button class="danger-btn" id="deleteSelected" disabled>Eliminar seleccionados</button>
+                <button class="secondary" id="exportCsv">Exportar CSV</button>
+                <button class="secondary" id="exportPdf">Exportar PDF</button>
+              </div>
             </div>
             <div class="table-wrap"><table><thead><tr>
-              <th>Fecha</th><th>Oficina</th><th>Marca / Modelo</th><th>Equipo</th><th>Ejecuciones</th><th>Nombre completo</th><th>Procesador</th><th>Núcleos</th><th>Sistema Operativo</th><th>Versión</th><th>Build</th><th>Tipo sistema</th><th>Placa Madre</th><th>RAM</th><th>Tipo RAM</th><th>Almacenamiento</th><th>Gráfica</th><th>UUID</th><th>Producto Windows</th>
+              <th class="select-cell"><input id="selectAllRows" type="checkbox" aria-label="Seleccionar o deseleccionar página"></th><th>Estado</th><th>Fecha</th><th>Oficina</th><th>Marca / Modelo</th><th>Equipo</th><th>Ejecuciones</th><th>Nombre completo</th><th>Procesador</th><th>Núcleos</th><th>Sistema Operativo</th><th>Versión</th><th>Build</th><th>Tipo sistema</th><th>Placa Madre</th><th>RAM</th><th>Tipo RAM</th><th>Almacenamiento</th><th>Gráfica</th><th>UUID</th><th>Producto Windows</th><th>Licencia Windows</th><th>Acciones</th>
             </tr></thead><tbody id="inventoryBody"></tbody></table></div>
-            <div class="pager"><span id="pageInfo">0 registros</span><div><button class="mini-btn" id="prevPage" aria-label="Página anterior">←</button><button class="mini-btn" id="nextPage" aria-label="Página siguiente">→</button></div></div>
+            <div class="pager"><span><span id="pageInfo">0 registros</span> · <b id="selectedCount">0 seleccionados</b></span><div><button class="mini-btn" id="prevPage" aria-label="Página anterior">←</button><button class="mini-btn" id="nextPage" aria-label="Página siguiente">→</button></div></div>
           </div>
         </section>
 
@@ -121,7 +127,7 @@
               <div><span class="eyebrow">Solo SuperAdmin</span><h2>Administradores</h2><p>Gestión controlada de accesos administrativos. Los administradores comunes no pueden crear otros administradores.</p></div>
               <button class="primary" id="addAdminBtn">＋ Agregar administrador</button>
             </div>
-            <div class="notice"><b>Seguridad:</b> las cuentas se crean en Supabase Auth mediante una Edge Function con Service Role. La clave de servicio nunca se expone en la PWA.</div>
+            <div class="notice"><b>Seguridad:</b> solo el SuperAdmin puede asignar el rol Administrador. La v0.3.3 crea la cuenta con Supabase Auth desde un cliente aislado y luego la habilita mediante un RPC protegido; ya no depende de la Edge Function <code>medtuc-admins</code>.</div>
             <div class="table-wrap admin-users-wrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th></tr></thead><tbody id="adminUsersBody"><tr><td colspan="4">Cargando…</td></tr></tbody></table></div>
           </div>
         </section>
@@ -139,7 +145,7 @@
                 <div class="card glass update-card">
                   <div class="update-header">
                     <div><span class="eyebrow">SuperAdmin</span><h2>Actualizaciones</h2><p>Comprobá nuevas versiones y aplicá patches del frontend alojado en GitHub Pages.</p></div>
-                    <div class="update-version"><small>Versión instalada</small><b>v<span id="installedVersion">0.3.2</span></b></div>
+                    <div class="update-version"><small>Versión instalada</small><b>v<span id="installedVersion">0.3.3</span></b></div>
                   </div>
                   <div class="update-status" id="updateStatus">
                     <div class="status-dot neutral"></div><div><b>Sin comprobar</b><span>Presioná “Buscar actualizaciones”.</span></div>
@@ -147,12 +153,12 @@
                   <div id="updateDetails" class="update-details hidden"></div>
                   <div class="update-actions">
                     <button class="secondary" id="checkUpdatesBtn">Buscar actualizaciones</button>
+                    <button class="secondary" id="attachPatchBtn">Adjuntar patch .ZIP</button>
+                    <input id="patchFileInput" class="hidden" type="file" accept=".zip,application/zip" />
                     <button class="secondary hidden" id="downloadPatchBtn">Descargar patch</button>
-                    <label class="secondary" for="patchFileInput" style="cursor:pointer">Adjuntar patch .ZIP</label>
-                    <input id="patchFileInput" type="file" accept=".zip,application/zip" class="hidden">
                     <button class="primary hidden" id="applyPatchBtn">Aplicar patch</button>
                   </div>
-                  <div class="notice"><b>Seguridad:</b> la instalación automática usa una Supabase Edge Function y el token de GitHub se guarda únicamente como secreto del servidor. Nunca se expone en JavaScript.</div>
+                  <div class="notice"><b>Actualización:</b> podés adjuntar un patch .ZIP para validarlo. En ejecución local (127.0.0.1) el navegador no puede reemplazar archivos del proyecto; extraé el ZIP sobre la carpeta del proyecto. En GitHub Pages, la instalación automática requiere la Edge Function del updater.</div>
                 </div>
                 <div class="card glass history-card"><h3>Historial de actualizaciones</h3><div id="updateHistory" class="history-list"><span class="muted">Sin registros.</span></div></div>
               </section>
@@ -165,6 +171,6 @@
 
   <footer>RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina<br>by <a href="https://github.com/fmgambino" target="_blank" rel="noopener noreferrer">Ing. Fernando Gambino</a> · Todos los Derechos Registrados</footer>
   <script src="assets/js/config.example.js"></script>
-  <script src="assets/js/app.js?v=0.3.2"></script>
+  <script src="assets/js/app.js?v=0.3.3"></script>
 </body>
 </html>

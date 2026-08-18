@@ -1,0 +1,13 @@
+RELEVAMIENTO MANAGER v0.3.2
+
+1) Supabase > SQL Editor: ejecutar supabase/migrations/004_v0.3.2.sql
+2) Copiar/reemplazar los archivos del patch sobre la carpeta del proyecto.
+3) Hacer Ctrl+F5.
+
+CAMBIOS CLAVE
+- Corrige el 404/PGRST202 de inventory_submission_status.
+- Si la validación previa no está disponible, YA NO bloquea la descarga del .BAT.
+- Configuraciones > Actualizaciones ahora permite Adjuntar patch .ZIP.
+- En localhost informa claramente que el navegador no puede sobrescribir archivos locales y guía el reemplazo manual.
+- Footer institucional uniforme en todas las pantallas.
+- Versión 0.3.2.

@@ -1,0 +1,36 @@
+RELEVAMIENTO MANAGER v0.3.3
+PATCH desde v0.3.2
+
+ORDEN OBLIGATORIO
+=================
+1) Supabase > SQL Editor > New query.
+2) Copiar y ejecutar COMPLETO:
+   supabase/migrations/005_v0.3.3.sql
+3) Verificar que finalice sin error.
+4) Reemplazar los archivos del proyecto con los incluidos en este patch.
+5) Hacer Ctrl + F5 en Chrome.
+
+CORRECCIONES PRINCIPALES
+========================
+- Corrige 404 de /rest/v1/rpc/register_inventory.
+- Corrige 404 de inventory_submission_status y check_recent_inventory.
+- Elimina la dependencia de /functions/v1/medtuc-admins, que estaba produciendo CORS / Failed to fetch.
+- Crea/lista administradores mediante Supabase Auth + RPC protegido para SuperAdmin.
+- Completa en la tabla inventories todas las columnas que usa el recopilador.
+- Checkbox individual + seleccionar página + deseleccionar + eliminar seleccionados.
+- Acciones Ver / Editar / Eliminar.
+- Estados por color.
+- Datos de licencia Windows; No licenciado = rojo.
+- Mantiene límite de 3 ejecuciones por equipo.
+
+IMPORTANTE SOBRE ADMINISTRADORES
+================================
+Para crear un administrador desde la PWA, Supabase Auth debe permitir el alta por Email.
+Si la confirmación de email está habilitada, el nuevo administrador deberá confirmar el correo antes de iniciar sesión.
+El usuario fernando.m.gambino@gmail.com queda forzado a rol superadmin por la migración.
+
+FOOTER
+======
+RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina
+by Ing. Fernando Gambino · Todos los Derechos Registrados
+https://github.com/fmgambino
