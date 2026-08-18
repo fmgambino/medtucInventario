@@ -1,0 +1,25 @@
+{
+  "latest_version": "0.3.0",
+  "published_at": "2026-08-18T18:29:00-03:00",
+  "minimum_supported_version": "0.2.0",
+  "patches": [
+    {
+      "from": "0.2.0",
+      "to": "0.3.0",
+      "title": "Identidad institucional + Administradores SuperAdmin + reportes propios",
+      "file": "updates/MEDTUC_patch_0.2.0_to_0.3.0.zip",
+      "sha256": null,
+      "size_human": "≈ 55 KB",
+      "requires_backend_migration": "supabase/migrations/002_v0.3.0.sql",
+      "requires_edge_function": "medtuc-admins",
+      "changelog": [
+        "Elimina cualquier dependencia de Google Sheets como backend.",
+        "Agrega logo oficial del Ministerio de Educación de Tucumán en la PWA y reportes PDF.",
+        "Agrega módulo Administradores visible solo para SuperAdmin.",
+        "Solo SuperAdmin puede crear administradores mediante Edge Function segura.",
+        "Mejora reportes PDF con usuario, fecha/hora y total de registros.",
+        "Mantiene recopilador .BAT para Windows 7, 10 y 11 con guardado directo en Supabase."
+      ]
+    }
+  ]
+}

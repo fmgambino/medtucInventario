@@ -1,0 +1,1 @@
+ebe3b47fafe099994c2b23bf2ea9bfc533e1a0a7a8253bd008619594764e2766  /mnt/data/medtucInventario-v0.3.0/updates/MEDTUC_patch_0.2.0_to_0.3.0.zip

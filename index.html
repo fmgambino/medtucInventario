@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#08111f" />
+  <meta name="description" content="Inventario centralizado de equipos MEDTUC" />
+  <title>MEDTUC Inventario</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=0.3.0" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div>
+
+  <header class="topbar glass">
+    <button class="brand brand-button" id="brandHome" type="button" aria-label="Ir al inicio">
+      <img class="brand-ministry-logo" src="assets/img/ministerio-educacion-tucuman.png" alt="Ministerio de Educación de Tucumán" />
+      <span><strong>MEDTUC Inventario</strong><small>Inventario centralizado de equipos</small></span>
+    </button>
+    <div class="top-actions">
+      <span class="version-pill">v<span id="appVersion">0.3.0</span></span>
+      <button class="icon-btn" id="btnAdmin" title="Área administrador" aria-label="Área administrador">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Zm8-3.5a6.8 6.8 0 0 0-.08-1l2-1.55-2-3.46-2.45.98a8.3 8.3 0 0 0-1.73-1L15.37 3h-4l-.37 2.97a8.3 8.3 0 0 0-1.73 1L6.82 5.99l-2 3.46L6.82 11a7 7 0 0 0 0 2l-2 1.55 2 3.46 2.45-.98a8.3 8.3 0 0 0 1.73 1l.37 2.97h4l.37-2.97a8.3 8.3 0 0 0 1.73-1l2.45.98 2-3.46-2-1.55c.05-.33.08-.66.08-1Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section id="userView" class="view active">
+      <div class="hero">
+        <div>
+          <span class="eyebrow">Inventario de PC · Windows 7 / 10 / 11</span>
+          <h1>Registrar este equipo</h1>
+          <p>Elegí la oficina y el nombre del equipo. Descargá un único archivo <b>.BAT</b>, ejecutalo con doble clic y el sistema confirmará cuando la información quede guardada.</p>
+        </div>
+        <div class="status-chip" id="connectionBadge">● Configuración pendiente</div>
+      </div>
+
+      <div class="steps-grid">
+        <article class="card glass step-card">
+          <span class="step">1</span><h2>Oficina</h2><p>Elegí una existente o creá una nueva.</p>
+          <div class="field"><label for="officeSelect">Oficina</label><div class="combo"><select id="officeSelect"><option value="">Seleccionar…</option></select><button class="mini-btn" id="addOffice" title="Crear oficina" aria-label="Crear oficina">＋</button></div></div>
+        </article>
+        <article class="card glass step-card">
+          <span class="step">2</span><h2>Nombre del equipo</h2><p>Elegí uno existente o registrá uno nuevo.</p>
+          <div class="field"><label for="equipmentSelect">Equipo</label><div class="combo"><select id="equipmentSelect"><option value="">Seleccionar…</option></select><button class="mini-btn" id="addEquipment" title="Crear equipo" aria-label="Crear equipo">＋</button></div></div>
+        </article>
+        <article class="card glass step-card featured-step">
+          <span class="step">3</span><h2>Recopilar y registrar</h2><p>El archivo detecta automáticamente hardware y datos del sistema.</p>
+          <button class="primary wide" id="generateCollector">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
+            Descargar recopilador .BAT
+          </button>
+        </article>
+      </div>
+
+      <article class="card glass guide">
+        <div class="guide-icon"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></div>
+        <div><h3>Proceso simplificado</h3><p>1. Elegí oficina. 2. Elegí o creá el equipo. 3. Descargá el .BAT. 4. Ejecutalo con doble clic. No necesitás abrir PowerShell ni copiar comandos.</p></div>
+      </article>
+
+      <article id="syncPanel" class="card glass sync-panel hidden">
+        <div class="spinner"></div><div><h3>Esperando datos del equipo…</h3><p id="syncText">Ejecutá el recopilador descargado. Esta pantalla se actualizará automáticamente.</p></div>
+      </article>
+    </section>
+
+    <section id="adminView" class="view">
+      <div class="admin-head">
+        <div><span class="eyebrow">Área restringida</span><h1>Administrador</h1><p>Consulta centralizada, exportación y configuración del proyecto.</p></div>
+        <div class="admin-actions"><button class="secondary" id="btnBack">Volver</button><button class="secondary hidden" id="btnLogout">Cerrar sesión</button></div>
+      </div>
+
+      <div id="loginCard" class="card glass login-card">
+        <h2>Iniciar sesión</h2>
+        <div class="field"><label for="adminEmail">Email</label><input id="adminEmail" type="email" autocomplete="username" placeholder="usuario@dominio.gob.ar"></div>
+        <div class="field"><label for="adminPassword">Contraseña</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <button class="primary wide" id="loginBtn">Ingresar</button>
+      </div>
+
+      <div id="dashboard" class="hidden">
+        <nav class="admin-nav glass" aria-label="Módulos de administrador">
+          <button class="admin-tab active" data-admin-tab="inventory">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5"/></svg>Inventario
+          </button>
+          <button class="admin-tab hidden" id="usersTabBtn" data-admin-tab="users">
+            <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M16 11h6"/></svg>Administradores
+          </button>
+          <button class="admin-tab hidden" id="settingsTabBtn" data-admin-tab="settings">
+            <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Zm8-3.5a6.8 6.8 0 0 0-.08-1l2-1.55-2-3.46-2.45.98a8.3 8.3 0 0 0-1.73-1L15.37 3h-4l-.37 2.97a8.3 8.3 0 0 0-1.73 1L6.82 5.99l-2 3.46L6.82 11a7 7 0 0 0 0 2l-2 1.55 2 3.46 2.45-.98a8.3 8.3 0 0 0 1.73 1l.37 2.97h4l.37-2.97a8.3 8.3 0 0 0 1.73-1l2.45.98 2-3.46-2-1.55c.05-.33.08-.66.08-1Z"/></svg>Configuraciones
+          </button>
+          <span class="role-chip" id="roleChip">Administrador</span>
+        </nav>
+
+        <section class="admin-panel active" data-admin-panel="inventory">
+          <div class="stats">
+            <div class="stat glass"><span>Registros</span><b id="statTotal">0</b></div>
+            <div class="stat glass"><span>Oficinas</span><b id="statOffices">0</b></div>
+            <div class="stat glass"><span>Último registro</span><b id="statLast">—</b></div>
+          </div>
+
+          <div class="card glass table-card">
+            <div class="toolbar">
+              <div class="left-tools"><label>Mostrar <select id="pageSize"><option>5</option><option selected>10</option><option>25</option><option>50</option><option>100</option><option>500</option><option>1000</option></select></label><input id="filterInput" placeholder="Filtrar oficina, equipo, CPU, Windows…" /></div>
+              <div class="right-tools"><button class="secondary" id="exportCsv">Exportar CSV</button><button class="secondary" id="exportPdf">Exportar PDF</button></div>
+            </div>
+            <div class="table-wrap"><table><thead><tr>
+              <th>Fecha</th><th>Oficina</th><th>Marca / Modelo</th><th>Equipo</th><th>Nombre completo</th><th>Procesador</th><th>Núcleos</th><th>Sistema Operativo</th><th>Versión</th><th>Build</th><th>Tipo sistema</th><th>Placa Madre</th><th>RAM</th><th>Tipo RAM</th><th>Almacenamiento</th><th>Gráfica</th><th>UUID</th><th>Producto Windows</th>
+            </tr></thead><tbody id="inventoryBody"></tbody></table></div>
+            <div class="pager"><span id="pageInfo">0 registros</span><div><button class="mini-btn" id="prevPage" aria-label="Página anterior">←</button><button class="mini-btn" id="nextPage" aria-label="Página siguiente">→</button></div></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="users">
+          <div class="card glass users-card">
+            <div class="module-head">
+              <div><span class="eyebrow">Solo SuperAdmin</span><h2>Administradores</h2><p>Gestión controlada de accesos administrativos. Los administradores comunes no pueden crear otros administradores.</p></div>
+              <button class="primary" id="addAdminBtn">＋ Agregar administrador</button>
+            </div>
+            <div class="notice"><b>Seguridad:</b> las cuentas se crean en Supabase Auth mediante una Edge Function con Service Role. La clave de servicio nunca se expone en la PWA.</div>
+            <div class="table-wrap admin-users-wrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Creado</th></tr></thead><tbody id="adminUsersBody"><tr><td colspan="4">Cargando…</td></tr></tbody></table></div>
+          </div>
+        </section>
+
+        <section class="admin-panel" data-admin-panel="settings">
+          <div class="settings-layout">
+            <aside class="settings-menu glass">
+              <button class="settings-item active" data-settings-panel="updates">
+                <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+                <span><b>Actualizaciones</b><small>Versiones y patches</small></span>
+              </button>
+            </aside>
+            <div class="settings-content">
+              <section class="settings-panel active" data-settings-content="updates">
+                <div class="card glass update-card">
+                  <div class="update-header">
+                    <div><span class="eyebrow">SuperAdmin</span><h2>Actualizaciones</h2><p>Comprobá nuevas versiones y aplicá patches del frontend alojado en GitHub Pages.</p></div>
+                    <div class="update-version"><small>Versión instalada</small><b>v<span id="installedVersion">0.3.0</span></b></div>
+                  </div>
+                  <div class="update-status" id="updateStatus">
+                    <div class="status-dot neutral"></div><div><b>Sin comprobar</b><span>Presioná “Buscar actualizaciones”.</span></div>
+                  </div>
+                  <div id="updateDetails" class="update-details hidden"></div>
+                  <div class="update-actions">
+                    <button class="secondary" id="checkUpdatesBtn">Buscar actualizaciones</button>
+                    <button class="secondary hidden" id="downloadPatchBtn">Descargar patch</button>
+                    <button class="primary hidden" id="applyPatchBtn">Aplicar patch</button>
+                  </div>
+                  <div class="notice"><b>Seguridad:</b> la instalación automática usa una Supabase Edge Function y el token de GitHub se guarda únicamente como secreto del servidor. Nunca se expone en JavaScript.</div>
+                </div>
+                <div class="card glass history-card"><h3>Historial de actualizaciones</h3><div id="updateHistory" class="history-list"><span class="muted">Sin registros.</span></div></div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>MEDTUC Inventario · v0.3.0 · GitHub Pages + Supabase</footer>
+  <script src="assets/js/config.example.js"></script>
+  <script src="assets/js/app.js?v=0.2.0"></script>
+</body>
+</html>
