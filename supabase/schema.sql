@@ -1,4 +1,4 @@
--- MEDTUC Inventario v0.3.0 - instalación limpia
+-- RELEVAMIENTO MANAGER / MEDTUC Inventario v0.3.1 - instalación limpia
 create extension if not exists pgcrypto;
 
 create table if not exists public.offices (
@@ -22,7 +22,7 @@ create table if not exists public.inventories (
   hostname text, full_device_name text, domain_workgroup text, system_type text,
   device_uuid text, product_id text, windows_version text, windows_build text,
   windows_install_date text, bios_serial text, bios_version text,
-  collector_version text, created_at timestamptz not null default now()
+  collector_version text, submission_count integer not null default 1, last_submitted_at timestamptz not null default now(), created_at timestamptz not null default now()
 );
 create table if not exists public.admin_users (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -51,7 +51,7 @@ create policy "public_read_equipment" on public.equipment_names for select to an
 drop policy if exists "public_insert_equipment" on public.equipment_names;
 create policy "public_insert_equipment" on public.equipment_names for insert to anon,authenticated with check (true);
 drop policy if exists "public_insert_inventory" on public.inventories;
-create policy "public_insert_inventory" on public.inventories for insert to anon,authenticated with check (true);
+-- Las altas públicas se realizan exclusivamente mediante register_inventory(), con máximo 3 ejecuciones por equipo.
 drop policy if exists "admin_read_admin_users" on public.admin_users;
 create policy "admin_read_admin_users" on public.admin_users for select to authenticated using (auth.uid()=user_id);
 drop policy if exists "admin_read_inventory" on public.inventories;
@@ -65,14 +65,18 @@ grant execute on function public.is_superadmin() to authenticated;
 drop policy if exists "superadmin_read_update_history" on public.update_history;
 create policy "superadmin_read_update_history" on public.update_history for select to authenticated using (public.is_superadmin());
 
-create or replace function public.check_recent_inventory(p_equipment_id uuid,p_since timestamptz)
-returns table(id uuid,created_at timestamptz,equipment_name text)
+create or replace function public.inventory_submission_status(p_equipment_id uuid)
+returns table(attempt_count integer,max_attempts integer,completed boolean,last_submitted_at timestamptz)
 language sql security definer set search_path=public as $$
-  select i.id,i.created_at,i.equipment_name from public.inventories i
-  where i.equipment_id=p_equipment_id and i.created_at>=p_since order by i.created_at desc limit 1;
+  select coalesce((select i.submission_count from public.inventories i where i.equipment_id=p_equipment_id order by i.last_submitted_at desc limit 1),0)::integer,3::integer,
+         (coalesce((select i.submission_count from public.inventories i where i.equipment_id=p_equipment_id order by i.last_submitted_at desc limit 1),0)>=3),
+         (select i.last_submitted_at from public.inventories i where i.equipment_id=p_equipment_id order by i.last_submitted_at desc limit 1);
 $$;
-revoke all on function public.check_recent_inventory(uuid,timestamptz) from public;
-grant execute on function public.check_recent_inventory(uuid,timestamptz) to anon,authenticated;
+revoke all on function public.inventory_submission_status(uuid) from public;
+grant execute on function public.inventory_submission_status(uuid) to anon,authenticated;
+
+-- register_inventory(jsonb) se define en migrations/003_v0.3.1.sql y es el único punto público de alta/actualización.
+-- Ejecutar esa migración también en instalaciones limpias después de schema.sql.
 
 -- No existen policies UPDATE/DELETE para oficinas, equipos ni inventarios.
 -- No existen policies INSERT/UPDATE/DELETE de admin_users para clientes: las altas las realiza medtuc-admins tras validar SuperAdmin.

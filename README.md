@@ -1,4 +1,4 @@
-# MEDTUC Inventario v0.3.0
+# MEDTUC Inventario v0.3.1
 
 MVP refactorizado para centralizar inventario de PCs de oficina en Supabase desde un portal estático publicado en GitHub Pages.
 
@@ -66,3 +66,11 @@ El recopilador evita APIs modernas como `Get-CimInstance` e `Invoke-RestMethod`;
 2. Desplegar `supabase/functions/medtuc-admins`.
 3. Publicar/aplicar el patch `updates/MEDTUC_patch_0.2.0_to_0.3.0.zip`.
 4. No reemplazar `assets/js/config.js` si ya contiene la configuración real del proyecto.
+
+## v0.3.1
+
+- Corregido recopilador en equipos OEM (`To Be Filled By O.E.M.`).
+- Máximo de 3 ejecuciones por equipo sin duplicar la fila principal.
+- `fernando.m.gambino@gmail.com` queda configurado como SuperAdmin mediante `003_v0.3.1.sql`.
+- Footer institucional/autoría en PWA, BAT y PDF.
+- Columna `Ejecuciones` visible en Administración y exportaciones.

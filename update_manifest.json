@@ -1,24 +1,24 @@
 {
-  "latest_version": "0.3.0",
-  "published_at": "2026-08-18T18:29:00-03:00",
-  "minimum_supported_version": "0.2.0",
+  "latest_version": "0.3.1",
+  "published_at": "2026-08-18T18:40:00-03:00",
+  "minimum_supported_version": "0.3.0",
   "patches": [
     {
-      "from": "0.2.0",
-      "to": "0.3.0",
-      "title": "Identidad institucional + Administradores SuperAdmin + reportes propios",
-      "file": "updates/MEDTUC_patch_0.2.0_to_0.3.0.zip",
+      "from": "0.3.0",
+      "to": "0.3.1",
+      "title": "Corrección del recopilador + máximo 3 relevamientos + SuperAdmin",
+      "file": "updates/MEDTUC_patch_0.3.0_to_0.3.1.zip",
       "sha256": null,
-      "size_human": "≈ 55 KB",
-      "requires_backend_migration": "supabase/migrations/002_v0.3.0.sql",
-      "requires_edge_function": "medtuc-admins",
+      "size_human": "pendiente",
+      "requires_backend_migration": "supabase/migrations/003_v0.3.1.sql",
       "changelog": [
-        "Elimina cualquier dependencia de Google Sheets como backend.",
-        "Agrega logo oficial del Ministerio de Educación de Tucumán en la PWA y reportes PDF.",
-        "Agrega módulo Administradores visible solo para SuperAdmin.",
-        "Solo SuperAdmin puede crear administradores mediante Edge Function segura.",
-        "Mejora reportes PDF con usuario, fecha/hora y total de registros.",
-        "Mantiene recopilador .BAT para Windows 7, 10 y 11 con guardado directo en Supabase."
+        "Corrige el error del recopilador relacionado con valores OEM como 'To Be Filled By O.E.M.'.",
+        "Refactoriza el PowerShell embebido para Windows 7, 10 y 11 usando WMI y Hashtable compatible.",
+        "Permite hasta 3 ejecuciones por equipo sin duplicar el inventario principal; las ejecuciones 2 y 3 actualizan la misma fila.",
+        "Al alcanzar 3 ejecuciones informa que el equipo ya fue cargado al inventario principal de la Dirección de Informática - Ministerio de Educación Tucumán.",
+        "Configura fernando.m.gambino@gmail.com como SuperAdmin mediante la migración SQL.",
+        "Agrega contador de ejecuciones al área Administrador y a reportes CSV/PDF.",
+        "Agrega la leyenda RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina y autoría en PWA, BAT y PDF."
       ]
     }
   ]

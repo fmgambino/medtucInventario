@@ -1,4 +1,4 @@
-const CACHE='medtuc-inventario-v0.3.0';
+const CACHE='medtuc-inventario-v0.3.1';
 const CORE=['./','index.html','assets/css/styles.css','assets/js/config.example.js','assets/js/app.js','assets/icons/logo.svg','assets/img/ministerio-educacion-tucuman.png','manifest.webmanifest'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
