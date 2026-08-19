@@ -1,19 +1,5 @@
 {
-  "latest_version": "0.3.3",
-  "published_at": "2026-08-19T00:30:00-03:00",
-  "patches": [
-    {
-      "from": "0.3.2",
-      "to": "0.3.3",
-      "file": "updates/MEDTUC_patch_0.3.2_to_0.3.3_FINAL.zip",
-      "title": "Inventario, licencias, administradores y updater corregidos",
-      "changelog": [
-        "Corrige registro del recopilador y fallback ante RPC no disponible",
-        "Agrega licencia de Windows y estados visuales",
-        "Agrega selección múltiple y acciones Ver/Editar/Eliminar",
-        "Corrige creación de administradores SuperAdmin",
-        "Corrige Instalador de Actualizaciones"
-      ]
-    }
-  ]
+  "latest_version": "1.0.0",
+  "published_at": "2026-08-19T11:45:00-03:00",
+  "patches": []
 }

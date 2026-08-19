@@ -107,8 +107,12 @@ values(1,'RELEVAMIENTO MANAGER','MEDTUC')
 on conflict(id) do nothing;
 
 -- ---------- Funciones de autorización ----------
-drop function if exists public.is_admin();
-drop function if exists public.is_superadmin();
+-- IMPORTANTE:
+-- Instalaciones 0.3.x pueden tener políticas RLS antiguas que dependen de
+-- is_admin()/is_superadmin(). CASCADE elimina solamente esos objetos
+-- dependientes; las políticas oficiales de v1.0.0 se recrean más abajo.
+drop function if exists public.is_admin() cascade;
+drop function if exists public.is_superadmin() cascade;
 
 create function public.is_admin()
 returns boolean
@@ -140,9 +144,11 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.is_superadmin() to authenticated;
 
 -- ---------- Registro público, máximo 3 veces ----------
-drop function if exists public.inventory_submission_status(uuid);
-drop function if exists public.check_recent_inventory(uuid,timestamptz);
-drop function if exists public.register_inventory(jsonb);
+-- Las versiones 0.3.x tuvieron firmas distintas. DROP + CASCADE evita
+-- ERROR 42P13 al cambiar OUT parameters / RETURNS TABLE.
+drop function if exists public.inventory_submission_status(uuid) cascade;
+drop function if exists public.check_recent_inventory(uuid,timestamptz) cascade;
+drop function if exists public.register_inventory(jsonb) cascade;
 
 create function public.inventory_submission_status(p_equipment_id uuid)
 returns table("exists" boolean, submission_count integer, completed boolean, last_submitted_at timestamptz)
@@ -288,6 +294,17 @@ from auth.users u
 where lower(u.email)=lower('fernando.m.gambino@gmail.com')
 on conflict(user_id) do update set role='superadmin',display_name='Ing. Fernando Gambino';
 
+-- ---------- Limpieza de políticas heredadas 0.3.x ----------
+-- Algunas instalaciones previas crearon estos nombres. Se eliminan de forma
+-- idempotente antes de instalar las políticas oficiales de v1.0.0.
+drop policy if exists admin_read_self on public.admin_users;
+drop policy if exists superadmin_insert_admin_users on public.admin_users;
+drop policy if exists superadmin_update_admin_users on public.admin_users;
+drop policy if exists superadmin_delete_admin_users on public.admin_users;
+drop policy if exists superadmin_read_admin_users on public.admin_users;
+drop policy if exists admin_read_self on public.update_history;
+drop policy if exists superadmin_read_update_history on public.update_history;
+
 -- ---------- RLS ----------
 alter table public.offices enable row level security;
 alter table public.equipment_names enable row level security;
@@ -337,4 +354,7 @@ create policy branding_superadmin_update on storage.objects for update to authen
 create policy branding_superadmin_delete on storage.objects for delete to authenticated using(bucket_id='branding' and public.is_superadmin());
 
 commit;
-notify pgrst,'reload schema';
+
+-- Recargar el schema cache de PostgREST para que los RPC nuevos queden
+-- disponibles inmediatamente desde la PWA.
+notify pgrst, 'reload schema';
