@@ -1,16 +1,15 @@
 {
   "from": [
-    "1.0.1"
+    "1.1.0"
   ],
-  "to": "1.0.2",
-  "title": "Corrección de estados y confirmación visual del relevamiento",
+  "to": "1.1.1",
+  "title": "Rediseño Mobile First de Configuraciones",
   "migrations": [],
   "files": [
     "index.html",
-    "assets/js/app.js",
     "assets/css/styles.css",
+    "assets/js/app.js",
     "sw.js",
-    "update_manifest.json",
-    "CAMBIOS_v1.0.2.txt"
+    "CAMBIOS_v1.1.1.md"
   ]
 }

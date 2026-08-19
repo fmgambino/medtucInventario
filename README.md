@@ -50,3 +50,14 @@ El Edge Function `medtuc-updater`:
 4. ejecuta las migraciones SQL con la Management API;
 5. actualiza los archivos del repositorio GitHub;
 6. registra el resultado en `update_history`.
+
+
+## v1.1.0 — Inventario inteligente
+
+La versión 1.1.0 incorpora Importador Inteligente para XLSX/XLS/CSV, filtros combinables,
+agrupación y conteo, etiquetas por color y edición de oficinas desde Configuraciones.
+
+Para actualizar desde v1.0.3 se recomienda usar:
+`RELEVAMIENTO_MANAGER_patch_1.0.3_to_1.1.0.zip`
+
+El patch incluye su migración SQL y está preparado para el actualizador automático.

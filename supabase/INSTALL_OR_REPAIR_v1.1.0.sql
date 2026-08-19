@@ -452,6 +452,9 @@ notify pgrst, 'reload schema';
 
 
 -- ============================================================
+-- v1.0.3 - IDENTIDAD FISICA DE EQUIPOS
+-- ============================================================
+-- ============================================================
 -- RELEVAMIENTO MANAGER v1.0.3
 -- CORRECCION CRITICA: una fila por PC fisica.
 -- Ya NO se identifica un inventario por equipment_id.
@@ -499,7 +502,7 @@ immutable
 set search_path=''
 as $$
   select encode(
-    digest(
+    extensions.digest(
       case
         when public.rm_clean_identity(p_device_uuid) is not null
           then 'uuid|' || public.rm_clean_identity(p_device_uuid)

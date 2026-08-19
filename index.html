@@ -8,7 +8,7 @@
   <title>RELEVAMIENTO MANAGER</title>
   <link id="appFavicon" rel="icon" href="assets/icons/favicon.svg">
   <link id="manifestLink" rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.0.3">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.2.3">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -23,7 +23,7 @@
       <span><strong id="brandTitle">RELEVAMIENTO MANAGER</strong><small>Dirección de Informática · Ministerio de Educación Tucumán</small></span>
     </span>
   </button>
-  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.0.3</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
+  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.2.3</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
 </header>
 
 <main class="shell">
@@ -73,21 +73,41 @@
         <div class="stat card glass"><small>Sin licencia</small><strong id="statUnlicensed">0</strong></div>
         <div class="stat card glass"><small>Completados 3/3</small><strong id="statComplete">0</strong></div>
       </div>
-      <div class="toolbar card glass">
-        <select id="pageSize"><option>5</option><option selected>10</option><option>25</option><option>50</option><option>100</option><option>500</option><option>1000</option></select>
-        <input id="inventoryFilter" placeholder="Filtrar por oficina, equipo, CPU, Windows...">
-        <button class="secondary" id="exportCsvBtn">CSV</button><button class="secondary" id="exportPdfBtn">PDF</button>
+      <div class="smart-filter-card card glass">
+        <div class="toolbar smart-toolbar">
+          <select class="modern-select" id="pageSize" title="Registros por página"><option>5</option><option selected>10</option><option>25</option><option>50</option><option>100</option><option>500</option><option>1000</option></select>
+          <input id="inventoryFilter" placeholder="Buscar oficina, equipo, CPU, Windows, hostname...">
+          <button class="secondary" id="toggleSmartFiltersBtn">⚡ Filtros inteligentes</button>
+          <button class="secondary" id="exportCsvBtn">CSV</button><button class="secondary" id="exportPdfBtn">PDF</button>
+        </div>
+        <div id="smartFilters" class="smart-filters">
+          <select class="modern-select" id="filterOffice"><option value="">Todas las oficinas</option></select>
+          <select class="modern-select" id="filterStatus"><option value="">Todos los estados</option><option value="1">Registrado 1/3</option><option value="2">Actualizado 2/3</option><option value="3">Completo 3/3</option></select>
+          <select class="modern-select" id="filterLicense"><option value="">Todas las licencias</option><option value="Licenciado">Licenciado</option><option value="No licenciado">No licenciado</option><option value="Desconocido">Desconocido</option></select>
+          <select class="modern-select" id="filterRam"><option value="">Toda RAM</option></select>
+          <select class="modern-select" id="filterTag"><option value="">Todas las etiquetas</option></select>
+          <select class="modern-select" id="groupBy"><option value="">Sin agrupar</option><option value="office_name">Agrupar por oficina</option><option value="brand">Agrupar por marca</option><option value="operating_system">Agrupar por Windows</option><option value="windows_license_status">Agrupar por licencia</option><option value="submission_count">Agrupar por estado</option><option value="ram_gb">Agrupar por RAM</option><option value="tags">Agrupar por etiqueta</option></select>
+          <button class="secondary" id="clearFiltersBtn">Limpiar filtros</button>
+        </div>
+        <div class="filter-meta"><strong id="filteredCount">0 resultados</strong><div id="groupSummary" class="group-summary"></div></div>
+      </div>
+      <div class="pager pager-top" aria-label="Paginación superior">
+        <button class="secondary pager-prev" type="button">← Atrás</button>
+        <span class="pager-info"></span>
+        <button class="secondary pager-next" type="button">Siguiente →</button>
       </div>
       <div class="selection-bar card glass">
         <label><input type="checkbox" id="selectPage"> Seleccionar página</label>
         <button class="secondary" id="clearSelectionBtn">Deseleccionar todo</button>
         <span id="selectedCount">0 seleccionados</span>
+        <button class="secondary" id="createTagBtn">+ Crear etiqueta</button>
+        <button class="secondary" id="assignTagBtn" disabled>🏷 Etiquetar seleccionados</button>
         <button class="danger-btn" id="deleteSelectedBtn" disabled>Eliminar seleccionados</button>
       </div>
       <div class="table-wrap glass"><table><thead><tr>
-        <th></th><th>Estado</th><th>Fecha</th><th>Oficina</th><th>Equipo</th><th>Marca/Modelo</th><th>CPU</th><th>RAM</th><th>Windows</th><th>Licencia</th><th>3x</th><th>Acciones</th>
+        <th></th><th>Estado</th><th>Fecha</th><th>Oficina</th><th>Equipo</th><th>Marca/Modelo</th><th>CPU</th><th>RAM</th><th>Windows</th><th>Licencia</th><th>Etiquetas</th><th>3x</th><th>Acciones</th>
       </tr></thead><tbody id="inventoryBody"></tbody></table></div>
-      <div class="pager"><button class="secondary" id="prevPage">← Atrás</button><span id="pagerInfo"></span><button class="secondary" id="nextPage">Siguiente →</button></div>
+      <div class="pager pager-bottom" aria-label="Paginación inferior"><button class="secondary pager-prev" type="button">← Atrás</button><span class="pager-info"></span><button class="secondary pager-next" type="button">Siguiente →</button></div>
     </section>
 
     <section class="admin-section" data-section="admins">
@@ -96,10 +116,15 @@
     </section>
 
     <section class="admin-section" data-section="settings">
-      <div class="settings-layout">
-        <aside class="settings-nav glass"><button class="settings-item active" data-setting="branding">Identidad PWA</button><button class="settings-item" data-setting="updates">Actualizaciones</button></aside>
+      <div class="settings-layout settings-shell">
+        <aside class="settings-nav glass settings-tabs">
+  <button class="settings-item active" data-setting="branding">Identidad PWA</button>
+  <button class="settings-item" data-setting="importer">Importador inteligente</button>
+  <button class="settings-item" data-setting="offices">Oficinas</button>
+  <button class="settings-item" data-setting="updates">Actualizaciones</button>
+</aside>
         <div>
-          <article class="card glass settings-pane active" data-pane="branding">
+          <article class="card glass settings-pane config-pane active" data-pane="branding">
             <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Identidad PWA</h2><p>Cambiá nombre, favicon e icono de instalación sin editar archivos.</p></div></div>
             <div class="form-grid"><div class="field"><label>Nombre de la aplicación</label><input id="settingAppName"></div>
             <div class="field"><label>Título corto</label><input id="settingShortName"></div></div>
@@ -110,8 +135,40 @@
             <button class="primary" id="saveBrandingBtn">Guardar identidad</button>
           </article>
 
-          <article class="card glass settings-pane" data-pane="updates">
-            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.0.3</b></div></div>
+          <article class="card glass settings-pane config-pane" data-pane="importer">
+            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Importador inteligente</h2><p>Importá inventarios históricos desde Excel o CSV. Detecta automáticamente las columnas, crea oficinas/equipos faltantes y evita duplicados.</p></div></div>
+            <div class="import-drop" id="importDrop">
+              <strong>Excel / CSV</strong>
+              <span>Formatos .xlsx, .xls y .csv. Compatible con la planilla histórica de MEDTUC.</span>
+              <input id="importFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            </div>
+            <div id="importMapping" class="mapping-grid hidden"></div>
+            <div id="importPreview" class="table-wrap hidden"></div>
+            <div class="import-actions">
+              <button class="primary" id="runImportBtn" disabled>Importar datos</button>
+              <span id="importStatus">Sin archivo seleccionado.</span>
+            </div>
+          </article>
+
+          <article class="card glass settings-pane config-pane" data-pane="offices">
+            <div class="settings-section-head">
+              <div>
+                <div class="eyebrow">SUPERADMIN</div>
+                <h2>Oficinas</h2>
+                <p>Editá los nombres de las oficinas. El cambio se propaga al inventario histórico y a los equipos asociados.</p>
+              </div>
+              <button class="secondary" id="refreshOfficesBtn">Actualizar listado</button>
+            </div>
+            <div class="settings-table-wrap offices-table-wrap">
+              <table class="modern-table">
+                <thead><tr><th>Oficina</th><th>Equipos catálogo</th><th>Inventarios</th><th>Acciones</th></tr></thead>
+                <tbody id="officesAdminBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card glass settings-pane config-pane" data-pane="updates">
+            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.2.3</b></div></div>
             <div id="patchState" class="patch-state"><span class="dot warn"></span><div><b>Sin patch adjunto</b><small>Adjuntá un .ZIP compatible.</small></div></div>
             <input id="patchInput" type="file" accept=".zip,application/zip" hidden>
             <div class="update-actions"><button class="secondary" id="checkUpdatesBtn">Buscar actualizaciones</button><button class="secondary" id="attachPatchBtn">Adjuntar patch .ZIP</button><button class="primary" id="installPatchBtn" disabled>Instalar actualización</button></div>
@@ -126,6 +183,7 @@
 </main>
 
 <footer class="footer">RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina<br>by <a href="https://github.com/fmgambino" target="_blank" rel="noopener">Ing. Fernando Gambino</a> · Todos los Derechos Registrados</footer>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="assets/js/config.js"></script>
-<script src="assets/js/app.js?v=1.0.3"></script>
+<script src="assets/js/app.js?v=1.2.3"></script>
 </body></html>

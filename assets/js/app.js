@@ -1,11 +1,11 @@
 (() => {
 'use strict';
-const APP_VERSION='1.0.3';
+const APP_VERSION='1.2.3';
 const C=window.MEDTUC_CONFIG||{};
 const configured=Boolean(C.SUPABASE_URL&&C.SUPABASE_ANON_KEY);
 const sb=configured?window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY):null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorToken:null};
+const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorToken:null,filters:{office:'',status:'',license:'',ram:'',tag:'',group:''},tags:[],importRows:[],importMap:{}};
 const swal={background:'#101827',color:'#edf4ff',confirmButtonColor:'#6ca8ff',cancelButtonColor:'#65758a'};
 const msg=(icon,title,text='')=>Swal.fire({...swal,icon,title,text,confirmButtonText:'Aceptar'});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -14,7 +14,11 @@ const fmt=v=>v?new Date(v).toLocaleString('es-AR'):'—';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 function switchView(id){$$('.view').forEach(v=>v.classList.remove('active'));$(id).classList.add('active');scrollTo({top:0,behavior:'smooth'})}
-function setConnection(){$('#connectionBadge').textContent=configured?'● Supabase configurado':'● Falta configurar Supabase';$('#connectionBadge').style.color=configured?'#69d6a5':'#ffd27d'}
+function setConnection(){
+ const badge=$('#connectionBadge'); if(!badge)return;
+ badge.textContent=configured?'● Supabase configurado':'● Falta configurar Supabase';
+ badge.style.color=configured?'#69d6a5':'#ffd27d';
+}
 function isSuper(){return state.role==='superadmin'}
 
 async function loadSettings(){
@@ -34,7 +38,7 @@ function applyDynamicManifest(name,shortName,icon){
    const base=new URL(C.PROJECT_URL||location.href,location.href);
    const startUrl=base.href.endsWith('/')?base.href:base.href.replace(/[^/]*$/,'');
    const iconUrl=new URL(icon,startUrl).href;
-   const m={name,short_name:shortName,start_url:startUrl,scope:startUrl,display:'standalone',background_color:'#08111f',theme_color:'#08111f',
+   const m={name,short_name:shortName,display:'standalone',background_color:'#08111f',theme_color:'#08111f',
      icons:[{src:iconUrl,sizes:'192x192',purpose:'any'},{src:iconUrl,sizes:'512x512',purpose:'any maskable'}]};
    const blob=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});
    if(state.manifestObjectUrl)URL.revokeObjectURL(state.manifestObjectUrl);
@@ -71,6 +75,8 @@ async function loadCatalogs(){
  if(oe||ee)return msg('error','No se pudo cargar el catálogo',(oe||ee).message);
  $('#officeSelect').innerHTML='<option value="">Seleccionar...</option>'+o.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
  $('#officeSelect').dataset.items=JSON.stringify(o); $('#equipmentSelect').dataset.items=JSON.stringify(e); renderEquipment();
+ const fo=$('#filterOffice'); if(fo)fo.innerHTML='<option value="">Todas las oficinas</option>'+o.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+ if(isSuper()&&$('#officesAdminBody')) renderOfficesAdmin(o,e);
 }
 function renderEquipment(){
  const oid=$('#officeSelect').value;let items=[];try{items=JSON.parse($('#equipmentSelect').dataset.items||'[]')}catch{}
@@ -188,21 +194,251 @@ async function hydrateSession(session){
  const {data,error}=await sb.from('admin_users').select('role,display_name').eq('user_id',state.user.id).maybeSingle();
  if(error||!data){await sb.auth.signOut();return msg('error','Acceso denegado','Este usuario no tiene permisos administrativos.')}
  state.role=data.role;$('#loginCard').classList.add('hidden');$('#adminPanel').classList.remove('hidden');$('#logoutBtn').classList.remove('hidden');$('#roleChip').textContent=isSuper()?'SuperAdmin':'Administrador';
- $$('.super-only').forEach(x=>x.classList.toggle('hidden',!isSuper()));await loadInventory();if(isSuper()){await loadAdmins();await loadSettings();await loadHistory()}
+ $$('.super-only').forEach(x=>x.classList.toggle('hidden',!isSuper()));await loadTags();await loadRamOptions();await loadInventory();if(isSuper()){await loadAdmins();await loadSettings();await loadHistory();await loadOfficesAdmin()}
 }
 async function logout(){await sb.auth.signOut();state.user=null;state.role=null;$('#adminPanel').classList.add('hidden');$('#loginCard').classList.remove('hidden');$('#logoutBtn').classList.add('hidden')}
 function switchTab(name){$$('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.admin-section').forEach(s=>s.classList.toggle('active',s.dataset.section===name));if(name==='admins')loadAdmins();if(name==='settings'){loadSettings();loadHistory()}}
-function switchSetting(name){$$('.settings-item').forEach(b=>b.classList.toggle('active',b.dataset.setting===name));$$('.settings-pane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name))}
+function switchSetting(name){$$('.settings-item').forEach(b=>b.classList.toggle('active',b.dataset.setting===name));$$('.settings-pane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name));if(name==='offices')loadOfficesAdmin()}
+
+
+async function loadTags(){
+ if(!state.user)return;
+ const {data,error}=await sb.from('tags').select('*').order('name');
+ if(error){console.warn('tags',error);return}
+ state.tags=data||[];
+ const ft=$('#filterTag'); if(ft)ft.innerHTML='<option value="">Todas las etiquetas</option>'+state.tags.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+}
+async function loadRamOptions(){
+ if(!state.user)return;
+ const {data}=await sb.from('inventories').select('ram_gb').not('ram_gb','is',null);
+ const vals=[...new Set((data||[]).map(x=>Number(x.ram_gb)).filter(Boolean))].sort((a,b)=>a-b);
+ const el=$('#filterRam'); if(el)el.innerHTML='<option value="">Toda RAM</option>'+vals.map(v=>`<option value="${v}">${v} GB</option>`).join('');
+}
+async function resolveTagInventoryIds(tagId){
+ if(!tagId)return null;
+ const {data,error}=await sb.from('inventory_tags').select('inventory_id').eq('tag_id',tagId);
+ if(error)throw error;
+ return (data||[]).map(x=>x.inventory_id);
+}
+function applyInventoryFilters(q,ids){
+ const f=state.filters;
+ if(f.office)q=q.eq('office_id',f.office);
+ if(f.status)q=q.eq('submission_count',Number(f.status));
+ if(f.license)q=q.eq('windows_license_status',f.license);
+ if(f.ram)q=q.eq('ram_gb',Number(f.ram));
+ if(ids)q=ids.length?q.in('id',ids):q.eq('id','00000000-0000-0000-0000-000000000000');
+ const txt=state.filter.trim();
+ if(txt){const s=txt.replace(/[%(),]/g,' ');q=q.or(`office_name.ilike.%${s}%,equipment_name.ilike.%${s}%,brand.ilike.%${s}%,model.ilike.%${s}%,processor.ilike.%${s}%,operating_system.ilike.%${s}%,hostname.ilike.%${s}%`)}
+ return q;
+}
+async function fetchFilteredInventory(paged=true){
+ const tagIds=await resolveTagInventoryIds(state.filters.tag);
+ let q=sb.from('inventories').select('*,inventory_tags(tag_id,tags(id,name,color))',{count:paged?'exact':undefined}).order('last_submitted_at',{ascending:false});
+ q=applyInventoryFilters(q,tagIds);
+ if(paged)q=q.range(state.page*state.size,state.page*state.size+state.size-1);
+ return await q;
+}
+function rowTags(r){
+ return (r.inventory_tags||[]).map(x=>x.tags).filter(Boolean);
+}
+function renderTags(r){
+ const tags=rowTags(r); if(!tags.length)return '<span class="muted">—</span>';
+ return `<div class="tag-list">${tags.map(t=>`<span class="tag-chip" style="--tag-color:${esc(t.color||'#7aa7ff')}"><i class="tag-dot"></i>${esc(t.name)}</span>`).join('')}</div>`;
+}
+function groupLabel(field,row){
+ if(field==='submission_count')return inventoryProcessStatus(row.submission_count)[1];
+ if(field==='ram_gb')return row.ram_gb?`${row.ram_gb} GB`:'Sin dato';
+ if(field==='tags'){const t=rowTags(row);return t.length?t.map(x=>x.name):['Sin etiqueta']}
+ return row[field]||'Sin dato';
+}
+async function updateGroupSummary(){
+ const el=$('#groupSummary'),countEl=$('#filteredCount'); if(!el||!countEl)return;
+ try{
+  const {data,error}=await fetchFilteredInventory(false); if(error)throw error;
+  const rows=data||[]; countEl.textContent=`${rows.length} resultado${rows.length===1?'':'s'}`;
+  const g=state.filters.group;
+  if(!g){el.innerHTML='';return}
+  const m=new Map();
+  rows.forEach(r=>{const labs=[groupLabel(g,r)].flat();labs.forEach(l=>m.set(l,(m.get(l)||0)+1))});
+  el.innerHTML=[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="group-chip">${esc(k)} <b>${v}</b></span>`).join('');
+ }catch(e){console.warn('group summary',e)}
+}
+async function createTag(){
+ const {value:v}=await Swal.fire({
+   ...swal,
+   title:'Nueva etiqueta',
+   html:`
+     <div class="tag-create-form">
+       <div class="edit-field">
+         <label for="tagName">Nombre</label>
+         <input id="tagName" class="swal2-input" maxlength="40" autocomplete="off" placeholder="Ej.: Administración">
+       </div>
+       <div class="edit-field">
+         <label for="tagColor">Color</label>
+         <div class="tag-color-row">
+           <input id="tagColor" type="color" value="#6ca8ff">
+           <span id="tagColorPreview" class="tag-chip tag-preview" style="--tag-color:#6ca8ff"><i class="tag-dot"></i>Vista previa</span>
+         </div>
+       </div>
+     </div>`,
+   showCancelButton:true,
+   confirmButtonText:'Crear etiqueta',
+   cancelButtonText:'Cancelar',
+   focusConfirm:false,
+   didOpen:()=>{
+     const color=$('#tagColor'),preview=$('#tagColorPreview');
+     color?.addEventListener('input',()=>preview?.style.setProperty('--tag-color',color.value));
+     setTimeout(()=>$('#tagName')?.focus(),50);
+   },
+   preConfirm:()=>{
+     const name=clean($('#tagName').value).replace(/\s+/g,' ').trim();
+     if(!name){Swal.showValidationMessage('Ingresá un nombre para la etiqueta.');return false}
+     if(name.length>40){Swal.showValidationMessage('El nombre no puede superar 40 caracteres.');return false}
+     return {name,color:$('#tagColor').value};
+   }
+ });
+ if(!v)return;
+
+ const normalized=v.name.toLocaleLowerCase('es-AR');
+ const existing=(state.tags||[]).find(t=>(t.name||'').trim().toLocaleLowerCase('es-AR')===normalized);
+ if(existing){
+   await msg('info','La etiqueta ya existe',`Ya existe la etiqueta "${existing.name}". Podés seleccionarla directamente en Editar o Etiquetar seleccionados.`);
+   return existing;
+ }
+
+ const {data,error}=await sb.from('tags')
+   .insert({name:v.name,color:v.color,created_by:state.user.id})
+   .select()
+   .single();
+
+ if(error){
+   if(error.code==='23505'||/tags_name_lower_uidx|duplicate key/i.test(error.message||'')){
+     await loadTags();
+     const found=(state.tags||[]).find(t=>(t.name||'').trim().toLocaleLowerCase('es-AR')===normalized);
+     return msg('info','La etiqueta ya existe',found?`Ya existe "${found.name}".`:'Ya existe una etiqueta con ese nombre.');
+   }
+   return msg('error','No se pudo crear',error.message);
+ }
+
+ await loadTags();
+ await msg('success','Etiqueta creada',data?.name||v.name);
+ return data;
+}
+async function assignTag(){
+ if(!state.selected.size)return msg('warning','Sin selección','Seleccioná uno o más equipos.');
+ if(!state.tags.length)return msg('info','No hay etiquetas','Creá una etiqueta primero.');
+ const opts=Object.fromEntries(state.tags.map(t=>[t.id,t.name]));
+ const {value:tagId}=await Swal.fire({...swal,title:'Etiquetar seleccionados',input:'select',inputOptions:opts,showCancelButton:true,confirmButtonText:'Aplicar',cancelButtonText:'Cancelar'});
+ if(!tagId)return;
+ const payload=[...state.selected].map(id=>({inventory_id:id,tag_id:tagId,created_by:state.user.id}));
+ const {error}=await sb.from('inventory_tags').upsert(payload,{onConflict:'inventory_id,tag_id'});if(error)return msg('error','No se pudo etiquetar',error.message);
+ await loadInventory();msg('success','Etiqueta aplicada',`${payload.length} equipo(s).`);
+}
+function renderOfficesAdmin(offices,equipment){
+ if(!$('#officesAdminBody'))return;
+ const invCounts={};state.rows.forEach(r=>{if(r.office_id)invCounts[r.office_id]=(invCounts[r.office_id]||0)+1});
+ $('#officesAdminBody').innerHTML=(offices||[]).map(o=>`<tr><td class="office-name-cell">${esc(o.name)}</td><td>${equipment.filter(e=>e.office_id===o.id).length}</td><td>${invCounts[o.id]||'—'}</td><td><button class="action-btn edit-office" data-id="${o.id}" title="Editar">${editSvg}</button></td></tr>`).join('')||'<tr><td colspan="4">Sin oficinas.</td></tr>';
+}
+async function loadOfficesAdmin(){
+ if(!isSuper())return;
+ const [{data:o,error:oe},{data:e,error:ee},{data:i,error:ie}]=await Promise.all([
+  sb.from('offices').select('id,name').order('name'),
+  sb.from('equipment_names').select('id,office_id'),
+  sb.from('inventories').select('office_id')
+ ]);
+ if(oe||ee||ie)return msg('error','No se pudo cargar oficinas',(oe||ee||ie).message);
+ const counts={};(i||[]).forEach(r=>{if(r.office_id)counts[r.office_id]=(counts[r.office_id]||0)+1});
+ $('#officesAdminBody').innerHTML=(o||[]).map(x=>`<tr><td class="office-name-cell">${esc(x.name)}</td><td>${(e||[]).filter(y=>y.office_id===x.id).length}</td><td>${counts[x.id]||0}</td><td><button class="action-btn edit-office" data-id="${x.id}" title="Editar">${editSvg}</button></td></tr>`).join('')||'<tr><td colspan="4">Sin oficinas.</td></tr>';
+}
+async function editOffice(id){
+ const {data:office,error}=await sb.from('offices').select('id,name').eq('id',id).single();if(error)return msg('error','Oficina',error.message);
+ const {value:name}=await Swal.fire({...swal,title:'Editar oficina',input:'text',inputValue:office.name,showCancelButton:true,confirmButtonText:'Guardar',cancelButtonText:'Cancelar',inputValidator:v=>clean(v).length<2?'Ingresá al menos 2 caracteres':undefined});
+ if(!name||clean(name)===office.name)return;
+ const {data,error:rpcErr}=await sb.rpc('superadmin_rename_office',{p_office_id:id,p_new_name:clean(name)});
+ if(rpcErr)return msg('error','No se pudo editar',rpcErr.message);
+ await loadCatalogs();await loadOfficesAdmin();if(state.user)await loadInventory();msg('success','Oficina actualizada',data?.name||clean(name));
+}
+
+const importAliases={
+ date:['fecha','date','createdat','fechahora'],
+ office_name:['oficina','office','dependencia','sector'],
+ brand:['marca','brand','fabricante'],
+ equipment_name:['nombreequipo','nombre_equipo','equipo','pc','hostname'],
+ processor:['procesador','processor','cpu'],
+ cores:['nucleos','núcleos','cores','nucleosfisicos'],
+ operating_system:['sistemaoperativo','sistema_operativo','so','windows','os'],
+ motherboard:['placamadre','placa_madre','motherboard','mainboard'],
+ ram_gb:['ramgb','ram_gb','ram','memoria'],
+ ram_type:['ramtipo','ram_tipo','tiporam','tipo_ram'],
+ storage:['almacenamiento','storage','disco','discos'],
+ graphics:['tarjetagrafica','tarjeta_grafica','gpu','grafica','gráfica'],
+ model:['modelo','model']
+};
+function normHeader(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'')}
+function detectImportMap(headers){
+ const normalized=Object.fromEntries(headers.map(h=>[normHeader(h),h])),map={};
+ for(const [field,aliases] of Object.entries(importAliases)){for(const a of aliases){const hit=normalized[normHeader(a)];if(hit){map[field]=hit;break}}}
+ return map;
+}
+function normalizeImportRow(row,map){
+ const get=f=>row[map[f]]??'';
+ const n=v=>clean(v);
+ const cores=parseInt(String(get('cores')).replace(/[^\d-]/g,''),10);
+ const ram=parseInt(String(get('ram_gb')).replace(/[^\d-]/g,''),10);
+ let dt=n(get('date')); if(dt){const d=new Date(dt.replace(' ','T'));if(!isNaN(d))dt=d.toISOString()}
+ return {office_name:n(get('office_name')),equipment_name:n(get('equipment_name')),brand:n(get('brand')),model:n(get('model')),processor:n(get('processor')),cores:Number.isFinite(cores)?cores:null,operating_system:n(get('operating_system')),motherboard:n(get('motherboard')),ram_gb:Number.isFinite(ram)?ram:null,ram_type:n(get('ram_type')),storage:n(get('storage')),graphics:n(get('graphics')),source_date:dt||null,collector_version:'IMPORT-v1.1.0'};
+}
+async function parseImportFile(file){
+ if(!window.XLSX)throw new Error('No se cargó el motor XLSX. Verificá la conexión a Internet.');
+ const ext=(file.name.split('.').pop()||'').toLowerCase();let wb;
+ if(ext==='csv'){const text=await file.text();wb=XLSX.read(text,{type:'string'})}else{const ab=await file.arrayBuffer();wb=XLSX.read(ab,{type:'array',cellDates:true})}
+ const ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
+ if(!rows.length)throw new Error('La planilla no contiene filas de datos.');
+ const headers=Object.keys(rows[0]),map=detectImportMap(headers);
+ if(!map.office_name||!map.equipment_name)throw new Error('No pude detectar las columnas Oficina y NombreEquipo/Equipo.');
+ state.importRows=rows;state.importMap=map;
+ $('#importMapping').classList.remove('hidden');
+ $('#importMapping').innerHTML=Object.entries(map).map(([f,h])=>`<div class="mapping-item"><b>${esc(f)}</b><span>${esc(h)}</span></div>`).join('');
+ const sample=rows.slice(0,5).map(r=>normalizeImportRow(r,map));
+ $('#importPreview').classList.remove('hidden');
+ $('#importPreview').innerHTML=`<table><thead><tr><th>Oficina</th><th>Equipo</th><th>Marca</th><th>CPU</th><th>RAM</th><th>Windows</th></tr></thead><tbody>${sample.map(r=>`<tr><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc(r.brand)}</td><td>${esc(r.processor)}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type)}</td><td>${esc(r.operating_system)}</td></tr>`).join('')}</tbody></table></div>`;
+ $('#runImportBtn').disabled=false;$('#importStatus').textContent=`${rows.length} fila(s) detectadas · ${Object.keys(map).length} columnas mapeadas.`;
+}
+async function runImport(){
+ if(!state.importRows.length)return;
+ const rows=state.importRows.map(r=>normalizeImportRow(r,state.importMap)).filter(r=>r.office_name&&r.equipment_name);
+ const ask=await Swal.fire({...swal,icon:'question',title:'Importar inventario',html:`Se procesarán <b>${rows.length}</b> filas. Se crearán oficinas/equipos faltantes y se evitarán duplicados.`,showCancelButton:true,confirmButtonText:'Importar',cancelButtonText:'Cancelar'});if(!ask.isConfirmed)return;
+ Swal.fire({...swal,title:'Importando datos...',html:`<div class="import-progress"><i id="importProgressBar"></i></div><div id="importProgressText">0 / ${rows.length}</div>`,allowOutsideClick:false,showConfirmButton:false});
+ let inserted=0,updated=0,errors=[];
+ for(let i=0;i<rows.length;i++){
+  try{const {data,error}=await sb.rpc('superadmin_import_inventory_row',{p_payload:rows[i]});if(error)throw error;const action=data?.action||'';if(action==='inserted')inserted++;else updated++}
+  catch(e){errors.push({row:i+2,error:e.message})}
+  const pct=Math.round(((i+1)/rows.length)*100),bar=document.getElementById('importProgressBar'),txt=document.getElementById('importProgressText');if(bar)bar.style.width=pct+'%';if(txt)txt.textContent=`${i+1} / ${rows.length}`;
+ }
+ Swal.close();await loadCatalogs();await loadInventory();await loadOfficesAdmin();
+ const detail=`Nuevos: ${inserted} · Actualizados/duplicados: ${updated} · Errores: ${errors.length}`;
+ $('#importStatus').textContent=detail;
+ if(errors.length)await Swal.fire({...swal,icon:'warning',title:'Importación finalizada con observaciones',html:`${esc(detail)}<br><small>${esc(errors.slice(0,5).map(x=>`Fila ${x.row}: ${x.error}`).join(' | '))}</small>`,confirmButtonText:'Aceptar'});
+ else await msg('success','Importación completada',detail);
+}
 
 async function loadInventory(){
- if(!state.user)return;state.size=Number($('#pageSize').value||10);
- let q=sb.from('inventories').select('*',{count:'exact'}).order('last_submitted_at',{ascending:false}).range(state.page*state.size,state.page*state.size+state.size-1);
- const f=state.filter.trim();if(f){const s=f.replace(/[%(),]/g,' ');q=q.or(`office_name.ilike.%${s}%,equipment_name.ilike.%${s}%,brand.ilike.%${s}%,processor.ilike.%${s}%,operating_system.ilike.%${s}%,hostname.ilike.%${s}%`)}
- const {data,error,count}=await q;if(error)return msg('error','No se pudo cargar inventario',error.message);state.rows=data||[];state.total=count||0;renderInventory();await loadStats();
+ if(!state.user)return;
+ state.size=Number($('#pageSize').value||10);
+ try{
+  const {data,error,count}=await fetchFilteredInventory(true);
+  if(error)throw error;
+  state.rows=data||[];state.total=count||0;
+  renderInventory();await loadStats();await updateGroupSummary();
+ }catch(e){msg('error','No se pudo cargar inventario',e.message)}
 }
 async function loadStats(){
  const {data}=await sb.from('inventories').select('windows_license_status,submission_count');
- const rows=data||[];$('#statTotal').textContent=rows.length;$('#statLicensed').textContent=rows.filter(r=>/licenciado/i.test(r.windows_license_status||'')&&!/no licenciado/i.test(r.windows_license_status||'')).length;$('#statUnlicensed').textContent=rows.filter(r=>/no licenciado/i.test(r.windows_license_status||'')).length;$('#statComplete').textContent=rows.filter(r=>(r.submission_count||0)>=3).length;
+ const rows=data||[];
+ $('#statTotal').textContent=rows.length;
+ $('#statLicensed').textContent=rows.filter(r=>/licenciado/i.test(r.windows_license_status||'')&&!/no licenciado/i.test(r.windows_license_status||'')).length;
+ $('#statUnlicensed').textContent=rows.filter(r=>/no licenciado/i.test(r.windows_license_status||'')).length;
+ $('#statComplete').textContent=rows.filter(r=>(r.submission_count||0)>=3).length;
 }
 const eyeSvg='<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg>';
 const editSvg='<svg viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
@@ -212,25 +448,183 @@ function renderInventory(){
  $('#inventoryBody').innerHTML=state.rows.map(r=>{const [lc,lt]=licenseStatus(r);const [sc,st]=inventoryProcessStatus(r.submission_count);return `<tr>
  <td><input class="row-check" type="checkbox" data-id="${esc(r.id)}" ${state.selected.has(r.id)?'checked':''}></td>
  <td><span class="status ${sc}">${st}</span></td>
- <td>${esc(fmt(r.last_submitted_at))}</td><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc((r.brand||'')+' '+(r.model||''))}</td><td>${esc(r.processor||'—')}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type||'')}</td><td>${esc(r.operating_system||'—')}</td><td><span class="status ${lc}">${lt}</span></td><td>${esc(r.submission_count||0)}/3</td>
- <td><div class="action-group"><button class="action-btn view-row" data-id="${r.id}" title="Ver">${eyeSvg}</button><button class="action-btn edit-row" data-id="${r.id}" title="Editar">${editSvg}</button><button class="action-btn delete-row" data-id="${r.id}" title="Eliminar">${trashSvg}</button></div></td></tr>`}).join('')||'<tr><td colspan="12">Sin registros.</td></tr>';
- const pages=Math.max(1,Math.ceil(state.total/state.size));$('#pagerInfo').textContent=`Página ${state.page+1} de ${pages} · ${state.total} registros`;$('#prevPage').disabled=state.page===0;$('#nextPage').disabled=state.page+1>=pages;syncSelectionUI();
+ <td>${esc(fmt(r.last_submitted_at))}</td><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc((r.brand||'')+' '+(r.model||''))}</td><td>${esc(r.processor||'—')}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type||'')}</td><td>${esc(r.operating_system||'—')}</td><td><span class="status ${lc}">${lt}</span></td><td>${renderTags(r)}</td><td>${esc(r.submission_count||0)}/3</td>
+ <td><div class="action-group"><button class="action-btn view-row" data-id="${r.id}" title="Ver">${eyeSvg}</button><button class="action-btn edit-row" data-id="${r.id}" title="Editar">${editSvg}</button>${isSuper()?`<button class="action-btn delete-row" data-id="${r.id}" title="Eliminar">${trashSvg}</button>`:''}</div></td></tr>`}).join('')||'<tr><td colspan="13">Sin registros.</td></tr>';
+ const pages=Math.max(1,Math.ceil(state.total/state.size));
+ $$('.pager-info').forEach(el=>el.textContent=`Página ${state.page+1} de ${pages} · ${state.total} registros`);
+ $$('.pager-prev').forEach(el=>el.disabled=state.page===0);
+ $$('.pager-next').forEach(el=>el.disabled=state.page+1>=pages);
+ syncSelectionUI();
 }
-function syncSelectionUI(){$('#selectedCount').textContent=`${state.selected.size} seleccionados`;$('#deleteSelectedBtn').disabled=!state.selected.size;$('#selectPage').checked=state.rows.length>0&&state.rows.every(r=>state.selected.has(r.id))}
-function detailsHtml(r){const fields=[['Oficina',r.office_name],['Equipo',r.equipment_name],['Host',r.hostname],['Marca',r.brand],['Modelo',r.model],['Procesador',r.processor],['Núcleos',r.cores],['RAM',`${r.ram_gb||'—'} GB ${r.ram_type||''}`],['Almacenamiento',r.storage],['Gráfica',r.graphics],['Windows',r.operating_system],['Versión',r.windows_version],['Build',r.windows_build],['Product ID',r.product_id],['Licencia',r.windows_license_status],['Canal',r.windows_license_channel],['Clave parcial',r.windows_partial_product_key],['OEM Key',r.windows_oem_key],['Placa madre',r.motherboard],['BIOS Serial',r.bios_serial],['BIOS',r.bios_version],['UUID',r.device_uuid],['Dominio/Grupo',r.domain_workgroup],['Sistema',r.system_type],['Relevamientos',`${r.submission_count}/3`]];return `<div class="details-grid">${fields.map(([a,b])=>`<div><b>${esc(a)}</b>${esc(b||'—')}</div>`).join('')}</div>`}
+function syncSelectionUI(){
+ $('#selectedCount').textContent=`${state.selected.size} seleccionados`;
+ const del=$('#deleteSelectedBtn');
+ if(del){del.classList.toggle('super-only-hidden',!isSuper());del.disabled=!isSuper()||!state.selected.size}
+ if($('#assignTagBtn'))$('#assignTagBtn').disabled=!state.selected.size;
+ $('#selectPage').checked=state.rows.length>0&&state.rows.every(r=>state.selected.has(r.id));
+}
+function detailsHtml(r){const fields=[['Oficina',r.office_name],['Equipo',r.equipment_name],['Host',r.hostname],['Marca',r.brand],['Modelo',r.model],['Procesador',r.processor],['Núcleos',r.cores],['RAM',`${r.ram_gb||'—'} GB ${r.ram_type||''}`],['Almacenamiento',r.storage],['Gráfica',r.graphics],['Windows',r.operating_system],['Versión',r.windows_version],['Build',r.windows_build],['Product ID',r.product_id],['Licencia',r.windows_license_status],['Canal',r.windows_license_channel],['Clave parcial',r.windows_partial_product_key],['OEM Key',r.windows_oem_key],['Placa madre',r.motherboard],['BIOS Serial',r.bios_serial],['BIOS',r.bios_version],['UUID',r.device_uuid],['Dominio/Grupo',r.domain_workgroup],['Sistema',r.system_type],['Etiquetas',rowTags(r).map(t=>t.name).join(', ')||'—'],['Relevamientos',`${r.submission_count}/3`]];return `<div class="details-grid">${fields.map(([a,b])=>`<div><b>${esc(a)}</b>${esc(b||'—')}</div>`).join('')}</div>`}
 async function viewRow(id){const r=state.rows.find(x=>x.id===id);if(r)Swal.fire({...swal,title:esc(r.equipment_name),html:detailsHtml(r),width:850,confirmButtonText:'Cerrar'})}
+function editTagSelector(row){
+ const selected=new Set(rowTags(row).map(t=>t.id));
+ if(!state.tags?.length){
+   return `<div class="edit-field edit-tags-field"><label>Etiquetas</label><div class="tag-selector-empty">No hay etiquetas creadas. Crealas desde “+ Crear etiqueta”.</div></div>`;
+ }
+ return `<div class="edit-field edit-tags-field">
+   <label>Etiquetas</label>
+   <div class="tag-selector" id="eTagSelector">
+     ${state.tags.map(t=>`
+       <label class="tag-option ${selected.has(t.id)?'selected':''}" style="--tag-color:${esc(t.color||'#6ca8ff')}">
+         <input type="checkbox" value="${esc(t.id)}" ${selected.has(t.id)?'checked':''}>
+         <span class="tag-option-dot"></span>
+         <span>${esc(t.name)}</span>
+       </label>`).join('')}
+   </div>
+   <small class="field-help">Podés elegir una o varias etiquetas existentes.</small>
+ </div>`;
+}
+function selectedEditTagIds(){
+ return $$('#eTagSelector input[type="checkbox"]:checked').map(x=>x.value);
+}
+async function saveInventoryTags(inventoryId,tagIds){
+ const ids=[...new Set((tagIds||[]).filter(Boolean))];
+ const {error:delErr}=await sb.from('inventory_tags').delete().eq('inventory_id',inventoryId);
+ if(delErr)throw delErr;
+ if(!ids.length)return;
+ const payload=ids.map(tag_id=>({inventory_id:inventoryId,tag_id,created_by:state.user.id}));
+ const {error:insErr}=await sb.from('inventory_tags').insert(payload);
+ if(insErr)throw insErr;
+}
+
 async function editRow(id){
  const r=state.rows.find(x=>x.id===id);if(!r)return;
- const {value:v}=await Swal.fire({...swal,title:'Editar inventario',html:`<input id="eOffice" class="swal2-input" value="${esc(r.office_name)}" placeholder="Oficina"><input id="eEquip" class="swal2-input" value="${esc(r.equipment_name)}" placeholder="Equipo"><input id="eBrand" class="swal2-input" value="${esc(r.brand||'')}" placeholder="Marca"><input id="eModel" class="swal2-input" value="${esc(r.model||'')}" placeholder="Modelo">`,showCancelButton:true,confirmButtonText:'Guardar',cancelButtonText:'Cancelar',preConfirm:()=>({office_name:clean($('#eOffice').value),equipment_name:clean($('#eEquip').value),brand:clean($('#eBrand').value),model:clean($('#eModel').value)})});
- if(!v)return;const {error}=await sb.from('inventories').update(v).eq('id',id);if(error)return msg('error','No se pudo editar',error.message);await loadInventory();msg('success','Registro actualizado');
+
+ let offices=[];try{offices=JSON.parse($('#officeSelect').dataset.items||'[]')}catch{}
+ const officeOptions=offices.map(o=>`<option value="${esc(o.id)}" ${o.id===r.office_id?'selected':''}>${esc(o.name)}</option>`).join('');
+ const text=(id,label,value,type='text')=>`<div class="edit-field"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(value??'')}"></div>`;
+ const area=(id,label,value)=>`<div class="edit-field"><label for="${id}">${label}</label><textarea id="${id}">${esc(value??'')}</textarea></div>`;
+
+ const form=`
+ <div class="inventory-edit-form">
+   <div class="edit-section-title">Identificación</div>
+   <div class="edit-field"><label>Oficina</label><select id="eOfficeId" class="modern-select">${officeOptions}</select></div>
+   ${text('eEquip','Equipo',r.equipment_name)}
+   ${text('eHostname','Hostname',r.hostname)}
+   ${text('eFullName','Nombre completo del dispositivo',r.full_device_name)}
+   ${text('eDomain','Dominio / Grupo',r.domain_workgroup)}
+   ${text('eSystemType','Tipo de sistema',r.system_type)}
+
+   <div class="edit-section-title">Hardware</div>
+   ${text('eBrand','Marca',r.brand)}
+   ${text('eModel','Modelo',r.model)}
+   ${text('eProcessor','Procesador',r.processor)}
+   ${text('eCores','Núcleos',r.cores,'number')}
+   ${text('eRamGb','RAM (GB)',r.ram_gb,'number')}
+   ${text('eRamType','Tipo de RAM',r.ram_type)}
+   ${area('eStorage','Almacenamiento',r.storage)}
+   ${area('eGraphics','Gráfica',r.graphics)}
+   ${text('eMotherboard','Placa madre',r.motherboard)}
+   ${text('eBiosSerial','BIOS Serial',r.bios_serial)}
+   ${text('eBiosVersion','Versión BIOS',r.bios_version)}
+   ${text('eUuid','UUID',r.device_uuid)}
+
+   <div class="edit-section-title">Windows y licencia</div>
+   ${area('eOS','Sistema operativo',r.operating_system)}
+   ${text('eWinVersion','Versión Windows',r.windows_version)}
+   ${text('eWinBuild','Build',r.windows_build)}
+   ${text('eProductId','Product ID',r.product_id)}
+   ${text('eInstallDate','Fecha instalación Windows',r.windows_install_date)}
+   <div class="edit-field"><label>Estado de licencia</label><select id="eLicenseStatus" class="modern-select">
+      <option ${r.windows_license_status==='Licenciado'?'selected':''}>Licenciado</option>
+      <option ${r.windows_license_status==='No licenciado'?'selected':''}>No licenciado</option>
+      <option ${!['Licenciado','No licenciado'].includes(r.windows_license_status||'')?'selected':''}>Desconocido</option>
+   </select></div>
+   ${area('eLicenseChannel','Canal de licencia',r.windows_license_channel)}
+   ${text('ePartialKey','Clave parcial',r.windows_partial_product_key)}
+   ${text('eOemKey','OEM Key',r.windows_oem_key)}
+
+   <div class="edit-section-title">Clasificación</div>
+   ${editTagSelector(r)}
+
+   <div class="edit-section-title">Control del relevamiento</div>
+   <div class="edit-field"><label>Relevamientos</label><select id="eSubmissionCount" class="modern-select">
+     <option value="1" ${(r.submission_count||1)==1?'selected':''}>1/3 · Registrado</option>
+     <option value="2" ${(r.submission_count||1)==2?'selected':''}>2/3 · Actualizado</option>
+     <option value="3" ${(r.submission_count||1)>=3?'selected':''}>3/3 · Completo</option>
+   </select></div>
+   ${text('eCollector','Versión recopilador',r.collector_version)}
+ </div>`;
+
+ let selectedTagIds=[];
+ const {value:v}=await Swal.fire({
+   ...swal,title:'Editar inventario',html:form,width:900,
+   showCancelButton:true,confirmButtonText:'Guardar cambios',cancelButtonText:'Cancelar',
+   focusConfirm:false,
+   didOpen:()=>{
+     $$('#eTagSelector input[type="checkbox"]').forEach(ch=>ch.addEventListener('change',()=>{
+       ch.closest('.tag-option')?.classList.toggle('selected',ch.checked);
+     }));
+   },
+   preConfirm:()=>{
+     const officeId=$('#eOfficeId').value;
+     selectedTagIds=selectedEditTagIds();
+     const office=offices.find(o=>o.id===officeId);
+     return {
+       office_id:officeId,
+       office_name:office?.name||r.office_name,
+       equipment_name:clean($('#eEquip').value),
+       hostname:clean($('#eHostname').value),
+       full_device_name:clean($('#eFullName').value),
+       domain_workgroup:clean($('#eDomain').value),
+       system_type:clean($('#eSystemType').value),
+       brand:clean($('#eBrand').value),
+       model:clean($('#eModel').value),
+       processor:clean($('#eProcessor').value),
+       cores:Number($('#eCores').value)||null,
+       ram_gb:Number($('#eRamGb').value)||null,
+       ram_type:clean($('#eRamType').value),
+       storage:clean($('#eStorage').value),
+       graphics:clean($('#eGraphics').value),
+       motherboard:clean($('#eMotherboard').value),
+       bios_serial:clean($('#eBiosSerial').value),
+       bios_version:clean($('#eBiosVersion').value),
+       device_uuid:clean($('#eUuid').value),
+       operating_system:clean($('#eOS').value),
+       windows_version:clean($('#eWinVersion').value),
+       windows_build:clean($('#eWinBuild').value),
+       product_id:clean($('#eProductId').value),
+       windows_install_date:clean($('#eInstallDate').value),
+       windows_license_status:$('#eLicenseStatus').value,
+       windows_license_channel:clean($('#eLicenseChannel').value),
+       windows_partial_product_key:clean($('#ePartialKey').value),
+       windows_oem_key:clean($('#eOemKey').value),
+       submission_count:Number($('#eSubmissionCount').value)||1,
+       collector_version:clean($('#eCollector').value),
+       last_submitted_at:new Date().toISOString()
+     };
+   }
+ });
+ if(!v)return;
+ const {error}=await sb.from('inventories').update(v).eq('id',id);
+ if(error)return msg('error','No se pudo editar',error.message);
+ try{
+   await saveInventoryTags(id,selectedTagIds);
+ }catch(e){
+   console.error('inventory_tags',e);
+   return msg('warning','Datos guardados, etiquetas pendientes',`El inventario se actualizó, pero no se pudieron guardar las etiquetas: ${e.message||e}`);
+ }
+ await loadTags();
+ await loadInventory();
+ msg('success','Registro actualizado','Los datos y etiquetas fueron guardados correctamente.');
 }
 async function deleteIds(ids){
+ if(!isSuper())return msg('warning','Acción restringida','Solo un SuperAdmin puede eliminar equipos.');
  if(!ids.length)return;const ok=await Swal.fire({...swal,icon:'warning',title:`Eliminar ${ids.length} registro(s)`,text:'Esta acción no se puede deshacer.',showCancelButton:true,confirmButtonText:'Eliminar',cancelButtonText:'Cancelar',confirmButtonColor:'#d65f69'});if(!ok.isConfirmed)return;
- const {error}=await sb.from('inventories').delete().in('id',ids);if(error)return msg('error','No se pudo eliminar',error.message);ids.forEach(id=>state.selected.delete(id));await loadInventory();msg('success','Eliminación completada');
+ const {error}=await sb.rpc('superadmin_delete_inventories',{p_ids:ids});if(error)return msg('error','No se pudo eliminar',error.message);ids.forEach(id=>state.selected.delete(id));await loadInventory();msg('success','Eliminación completada');
 }
 function csvEscape(v){const s=String(v??'');return `"${s.replace(/"/g,'""')}"`}
-async function allInventory(){const {data,error}=await sb.from('inventories').select('*').order('last_submitted_at',{ascending:false});if(error)throw error;return data||[]}
-async function exportCSV(){try{const rows=await allInventory(),cols=['last_submitted_at','office_name','equipment_name','brand','model','processor','cores','ram_gb','ram_type','storage','graphics','operating_system','windows_version','windows_build','windows_license_status','windows_license_channel','windows_partial_product_key','hostname','motherboard','bios_serial','device_uuid','submission_count'];const csv=[cols.join(','),...rows.map(r=>cols.map(c=>csvEscape(r[c])).join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`inventario_${Date.now()}.csv`)}catch(e){msg('error','No se pudo exportar',e.message)}}
+async function allInventory(){const {data,error}=await fetchFilteredInventory(false);if(error)throw error;return data||[]}
+async function exportCSV(){try{const rows=await allInventory(),cols=['last_submitted_at','office_name','equipment_name','brand','model','processor','cores','ram_gb','ram_type','storage','graphics','operating_system','windows_version','windows_build','windows_license_status','windows_license_channel','windows_partial_product_key','hostname','motherboard','bios_serial','device_uuid','submission_count'];const csv=[cols.concat(['tags']).join(','),...rows.map(r=>cols.map(c=>csvEscape(r[c])).concat(csvEscape(rowTags(r).map(t=>t.name).join('|'))).join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`inventario_${Date.now()}.csv`)}catch(e){msg('error','No se pudo exportar',e.message)}}
 async function exportPDF(){try{const rows=await allInventory();const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape'});let logo=null;try{const res=await fetch($('#brandLogo').src);const blob=await res.blob();logo=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)})}catch{};if(logo)doc.addImage(logo,'PNG',12,8,34,15);doc.setFontSize(15);doc.text('RELEVAMIENTO MANAGER - Inventario de Equipos',52,15);doc.setFontSize(9);doc.text(`Fecha: ${new Date().toLocaleString('es-AR')} · Usuario: ${state.user.email}`,52,21);doc.autoTable({startY:28,head:[['Oficina','Equipo','Marca/Modelo','CPU','RAM','Windows','Licencia','3x']],body:rows.map(r=>[r.office_name,r.equipment_name,`${r.brand||''} ${r.model||''}`,r.processor,`${r.ram_gb||''} GB ${r.ram_type||''}`,r.operating_system,r.windows_license_status,`${r.submission_count}/3`]),styles:{fontSize:7},headStyles:{fillColor:[30,50,78]}});const y=doc.internal.pageSize.height-8;doc.setFontSize(7);doc.text('RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina · by Ing. Fernando Gambino · Todos los Derechos Registrados',12,y);doc.save(`inventario_${Date.now()}.pdf`)}catch(e){msg('error','No se pudo generar PDF',e.message)}}
 
 async function invokeFn(name,body){
@@ -276,17 +670,124 @@ async function checkUpdates(){try{const u=(C.PROJECT_URL||location.href).replace
 async function loadHistory(){if(!isSuper())return;const {data}=await sb.from('update_history').select('*').order('created_at',{ascending:false}).limit(20);$('#updateHistory').innerHTML=(data||[]).map(x=>`<div class="patch-state"><span class="dot ${x.status==='success'?'ok':'warn'}"></span><div><b>${esc(x.from_version)} → ${esc(x.to_version)}</b><small>${esc(fmt(x.created_at))} · ${esc(x.applied_by_email||'')}</small></div></div>`).join('')||'Sin registros.'}
 
 function bind(){
- $('#homeBtn').onclick=()=>switchView('#publicView');$('#backBtn').onclick=()=>switchView('#publicView');$('#adminOpenBtn').onclick=openAdmin;$('#loginForm').onsubmit=login;$('#logoutBtn').onclick=logout;
- $('#officeSelect').onchange=renderEquipment;$('#newOfficeBtn').onclick=()=>createCatalog('office');$('#newEquipmentBtn').onclick=()=>createCatalog('equipment');$('#downloadCollectorBtn').onclick=downloadCollector;
- $$('.admin-tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));$$('.settings-item').forEach(b=>b.onclick=()=>switchSetting(b.dataset.setting));
- $('#pageSize').onchange=()=>{state.page=0;loadInventory()};let t;$('#inventoryFilter').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{state.filter=e.target.value;state.page=0;loadInventory()},300)};
- $('#prevPage').onclick=()=>{if(state.page>0){state.page--;loadInventory()}};$('#nextPage').onclick=()=>{state.page++;loadInventory()};
- $('#inventoryBody').onclick=e=>{const b=e.target.closest('button');if(!b)return;const id=b.dataset.id;if(b.classList.contains('view-row'))viewRow(id);if(b.classList.contains('edit-row'))editRow(id);if(b.classList.contains('delete-row'))deleteIds([id])};
- $('#inventoryBody').onchange=e=>{if(!e.target.classList.contains('row-check'))return;const id=e.target.dataset.id;e.target.checked?state.selected.add(id):state.selected.delete(id);syncSelectionUI()};
- $('#selectPage').onchange=e=>{state.rows.forEach(r=>e.target.checked?state.selected.add(r.id):state.selected.delete(r.id));renderInventory()};$('#clearSelectionBtn').onclick=()=>{state.selected.clear();renderInventory()};$('#deleteSelectedBtn').onclick=()=>deleteIds([...state.selected]);
- $('#exportCsvBtn').onclick=exportCSV;$('#exportPdfBtn').onclick=exportPDF;$('#addAdminBtn').onclick=addAdmin;$('#saveBrandingBtn').onclick=saveBranding;
- $('#attachPatchBtn').onclick=()=>$('#patchInput').click();$('#patchInput').onchange=e=>selectPatch(e.target.files[0]);$('#installPatchBtn').onclick=installPatch;$('#checkUpdatesBtn').onclick=checkUpdates;
+ const on=(sel,event,fn)=>{const el=$(sel);if(el)el.addEventListener(event,fn);return el};
+ const click=(sel,fn)=>on(sel,'click',fn);
+ const change=(sel,fn)=>on(sel,'change',fn);
+
+ click('#homeBtn',()=>switchView('#publicView'));
+ click('#backBtn',()=>switchView('#publicView'));
+ click('#adminOpenBtn',openAdmin);
+ on('#loginForm','submit',login);
+ click('#logoutBtn',logout);
+
+ change('#officeSelect',renderEquipment);
+ click('#newOfficeBtn',()=>createCatalog('office'));
+ click('#newEquipmentBtn',()=>createCatalog('equipment'));
+ click('#downloadCollectorBtn',downloadCollector);
+
+ $$('.admin-tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+ $$('.settings-item').forEach(b=>b.addEventListener('click',()=>switchSetting(b.dataset.setting)));
+
+ change('#pageSize',()=>{state.page=0;loadInventory()});
+ let searchTimer;
+ on('#inventoryFilter','input',e=>{
+   clearTimeout(searchTimer);
+   searchTimer=setTimeout(()=>{
+     state.filter=e.target.value;
+     state.page=0;
+     loadInventory();
+   },300);
+ });
+
+ // La v1.2.x usa paginación duplicada arriba y abajo: NO existen #prevPage/#nextPage.
+ $$('.pager-prev').forEach(btn=>btn.addEventListener('click',()=>{
+   if(state.page>0){state.page--;loadInventory()}
+ }));
+ $$('.pager-next').forEach(btn=>btn.addEventListener('click',()=>{
+   const pages=Math.max(1,Math.ceil(state.total/state.size));
+   if(state.page+1<pages){state.page++;loadInventory()}
+ }));
+
+ on('#inventoryBody','click',e=>{
+   const b=e.target.closest('button');
+   if(!b)return;
+   const id=b.dataset.id;
+   if(b.classList.contains('view-row'))viewRow(id);
+   if(b.classList.contains('edit-row'))editRow(id);
+   if(b.classList.contains('delete-row'))deleteIds([id]);
+ });
+ on('#inventoryBody','change',e=>{
+   if(!e.target.classList.contains('row-check'))return;
+   const id=e.target.dataset.id;
+   e.target.checked?state.selected.add(id):state.selected.delete(id);
+   syncSelectionUI();
+ });
+
+ change('#selectPage',e=>{
+   state.rows.forEach(r=>e.target.checked?state.selected.add(r.id):state.selected.delete(r.id));
+   renderInventory();
+ });
+ click('#clearSelectionBtn',()=>{state.selected.clear();renderInventory()});
+ click('#deleteSelectedBtn',()=>deleteIds([...state.selected]));
+
+ click('#exportCsvBtn',exportCSV);
+ click('#exportPdfBtn',exportPDF);
+ click('#addAdminBtn',addAdmin);
+ click('#saveBrandingBtn',saveBranding);
+
+ click('#attachPatchBtn',()=>$('#patchInput')?.click());
+ change('#patchInput',e=>{const f=e.target.files?.[0];if(f)selectPatch(f)});
+ click('#installPatchBtn',installPatch);
+ click('#checkUpdatesBtn',checkUpdates);
+
+ click('#toggleSmartFiltersBtn',()=>$('#smartFilters')?.classList.toggle('is-collapsed'));
+ const smartMap={filterOffice:'office',filterStatus:'status',filterLicense:'license',filterRam:'ram',filterTag:'tag',groupBy:'group'};
+ Object.entries(smartMap).forEach(([id,key])=>{
+   change('#'+id,e=>{state.filters[key]=e.target.value;state.page=0;loadInventory()});
+ });
+ click('#clearFiltersBtn',()=>{
+   state.filter='';
+   if($('#inventoryFilter'))$('#inventoryFilter').value='';
+   state.filters={office:'',status:'',license:'',ram:'',tag:'',group:''};
+   Object.keys(smartMap).forEach(id=>{const el=$('#'+id);if(el)el.value=''});
+   state.page=0;
+   loadInventory();
+ });
+
+ click('#createTagBtn',createTag);
+ click('#assignTagBtn',assignTag);
+
+ change('#importFile',e=>{
+   const f=e.target.files?.[0];
+   if(f)parseImportFile(f).catch(err=>msg('error','No se pudo leer la planilla',err.message));
+ });
+ click('#runImportBtn',runImport);
+
+ click('#refreshOfficesBtn',loadOfficesAdmin);
+ on('#officesAdminBody','click',e=>{
+   const b=e.target.closest('.edit-office');
+   if(b)editOffice(b.dataset.id);
+ });
+
+ // Estado inicial de acciones sensibles según rol.
+ syncSelectionUI();
 }
-async function init(){bind();setConnection();$('#versionBadge').textContent='v'+APP_VERSION;$('#installedVersion').textContent='v'+APP_VERSION;await loadCatalogs();await loadSettings();try{const f=await idbGet();if(f)await selectPatch(f)}catch{}if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})}
+
+async function init(){
+ try{bind()}catch(e){console.error('RM bind error',e)}
+ try{setConnection()}catch(e){console.warn('RM connection badge',e)}
+ if($('#versionBadge'))$('#versionBadge').textContent='v'+APP_VERSION;
+ if($('#installedVersion'))$('#installedVersion').textContent='v'+APP_VERSION;
+
+ // Catálogos públicos son críticos: se cargan aunque falle un módulo opcional.
+ try{await loadCatalogs()}catch(e){
+   console.error('RM loadCatalogs error',e);
+   const badge=$('#connectionBadge');
+   if(badge){badge.textContent='• Error cargando catálogos';badge.classList.add('bad')}
+ }
+ try{await loadSettings()}catch(e){console.warn('RM loadSettings',e)}
+ try{const f=await idbGet();if(f)await selectPatch(f)}catch(e){console.warn('RM patch cache',e)}
+ if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
 document.addEventListener('DOMContentLoaded',init);
 })();
