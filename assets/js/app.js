@@ -1,11 +1,11 @@
 (() => {
 'use strict';
-const APP_VERSION='1.0.2';
+const APP_VERSION='1.0.3';
 const C=window.MEDTUC_CONFIG||{};
 const configured=Boolean(C.SUPABASE_URL&&C.SUPABASE_ANON_KEY);
 const sb=configured?window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY):null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorBaseline:0};
+const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorToken:null};
 const swal={background:'#101827',color:'#edf4ff',confirmButtonColor:'#6ca8ff',cancelButtonColor:'#65758a'};
 const msg=(icon,title,text='')=>Swal.fire({...swal,icon,title,text,confirmButtonText:'Aceptar'});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -89,10 +89,10 @@ async function createCatalog(type){
 }
 
 function psQuote(v){return String(v??'').replace(/'/g,"''")}
-function collectorPS(officeId,equipmentId,officeName,equipmentName){
+function collectorPS(officeId,equipmentId,officeName,equipmentName,submissionToken){
  const endpoint=C.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/register_inventory';
  return `$ErrorActionPreference = 'Stop'\r\n`+
-`$SupabaseEndpoint='${psQuote(endpoint)}'\r\n$AnonKey='${psQuote(C.SUPABASE_ANON_KEY)}'\r\n$OfficeId='${psQuote(officeId)}'\r\n$EquipmentId='${psQuote(equipmentId)}'\r\n$OfficeName='${psQuote(officeName)}'\r\n$EquipmentName='${psQuote(equipmentName)}'\r\n`+
+`$SupabaseEndpoint='${psQuote(endpoint)}'\r\n$AnonKey='${psQuote(C.SUPABASE_ANON_KEY)}'\r\n$OfficeId='${psQuote(officeId)}'\r\n$EquipmentId='${psQuote(equipmentId)}'\r\n$OfficeName='${psQuote(officeName)}'\r\n$EquipmentName='${psQuote(equipmentName)}'\r\n$SubmissionToken='${psQuote(submissionToken)}'\r\n`+
 `function CleanValue { param([object]$Value,[string]$Fallback='No detectado'); if($null -eq $Value){return $Fallback}; $Text=([string]$Value).Trim(); if([string]::IsNullOrEmpty($Text)){return $Fallback}; return $Text }\r\n`+
 `try {\r\n  try {[Net.ServicePointManager]::SecurityProtocol = [Enum]::ToObject([Net.SecurityProtocolType],3072)} catch {}\r\n`+
 `  Write-Host ''\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host ' RELEVAMIENTO MANAGER - RECOPILADOR v${APP_VERSION}' -ForegroundColor Cyan\r\n  Write-Host ' Direccion de Informatica - Ministerio de Educacion Tucuman' -ForegroundColor Gray\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host 'Recopilando datos del equipo...' -ForegroundColor White\r\n`+
@@ -102,7 +102,7 @@ function collectorPS(officeId,equipmentId,officeName,equipmentName){
 `  $cv='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';$displayVersion='';$windowsProductId='';try{$reg=Get-ItemProperty -Path $cv;$displayVersion=if($reg.DisplayVersion){$reg.DisplayVersion}elseif($reg.ReleaseId){$reg.ReleaseId}else{''};$windowsProductId=$reg.ProductId}catch{}\r\n  $arch=CleanValue -Value $os.OSArchitecture; if($arch -eq 'No detectado'){if([IntPtr]::Size -eq 8){$arch='64 bits'}else{$arch='32 bits'}}\r\n`+
 `  $licenseStatus='Desconocido';$licenseChannel='No detectado';$partialKey='';$oemKey=''\r\n  try {$lic=Get-WmiObject -Class SoftwareLicensingProduct | Where-Object {$_.PartialProductKey -and $_.Name -match 'Windows'} | Sort-Object LicenseStatus -Descending | Select-Object -First 1; if($lic){if([int]$lic.LicenseStatus -eq 1){$licenseStatus='Licenciado'}else{$licenseStatus='No licenciado'};$partialKey=CleanValue -Value $lic.PartialProductKey -Fallback '';$licenseChannel=CleanValue -Value $lic.Description}} catch {}\r\n  try {$svc=Get-WmiObject -Class SoftwareLicensingService | Select-Object -First 1; if($svc -and $svc.PSObject.Properties['OA3xOriginalProductKey']){$oemKey=CleanValue -Value $svc.OA3xOriginalProductKey -Fallback ''}} catch {}\r\n`+
 `  $boardManufacturer=CleanValue -Value $board.Manufacturer -Fallback ''\r\n  $boardProduct=CleanValue -Value $board.Product -Fallback ''\r\n  $motherboard=("{0} {1}" -f $boardManufacturer,$boardProduct).Trim(); if([string]::IsNullOrEmpty($motherboard)){$motherboard='No detectado'}\r\n`+
-`  $payload=@{\r\n    office_id=$OfficeId; equipment_id=$EquipmentId; office_name=$OfficeName; equipment_name=$EquipmentName;\r\n    brand=(CleanValue -Value $cs.Manufacturer); model=(CleanValue -Value $cs.Model); processor=(CleanValue -Value $cpu.Name); cores=[int]$cpu.NumberOfCores;\r\n    operating_system=("{0} ({1})" -f (CleanValue -Value $os.Caption),$arch); windows_version=(CleanValue -Value $displayVersion); windows_build=(CleanValue -Value $os.BuildNumber); windows_install_date=(CleanValue -Value $installDate);\r\n    motherboard=$motherboard; ram_gb=[int]$ramGB; ram_type=$ramType; storage=$storage; graphics=(CleanValue -Value $gpu.Name);\r\n    hostname=$env:COMPUTERNAME; full_device_name=$fullName; domain_workgroup=(CleanValue -Value $cs.Domain); system_type=(CleanValue -Value $cs.SystemType);\r\n    device_uuid=(CleanValue -Value $csp.UUID); product_id=(CleanValue -Value $windowsProductId); bios_serial=(CleanValue -Value $bios.SerialNumber); bios_version=(CleanValue -Value (($bios.SMBIOSBIOSVersion -join ' ')));\r\n    windows_license_status=$licenseStatus; windows_license_channel=$licenseChannel; windows_partial_product_key=$partialKey; windows_oem_key=$oemKey; collector_version='${APP_VERSION}'\r\n  }\r\n`+
+`  $payload=@{\r\n    office_id=$OfficeId; equipment_id=$EquipmentId; office_name=$OfficeName; equipment_name=$EquipmentName; submission_token=$SubmissionToken;\r\n    brand=(CleanValue -Value $cs.Manufacturer); model=(CleanValue -Value $cs.Model); processor=(CleanValue -Value $cpu.Name); cores=[int]$cpu.NumberOfCores;\r\n    operating_system=("{0} ({1})" -f (CleanValue -Value $os.Caption),$arch); windows_version=(CleanValue -Value $displayVersion); windows_build=(CleanValue -Value $os.BuildNumber); windows_install_date=(CleanValue -Value $installDate);\r\n    motherboard=$motherboard; ram_gb=[int]$ramGB; ram_type=$ramType; storage=$storage; graphics=(CleanValue -Value $gpu.Name);\r\n    hostname=$env:COMPUTERNAME; full_device_name=$fullName; domain_workgroup=(CleanValue -Value $cs.Domain); system_type=(CleanValue -Value $cs.SystemType);\r\n    device_uuid=(CleanValue -Value $csp.UUID); product_id=(CleanValue -Value $windowsProductId); bios_serial=(CleanValue -Value $bios.SerialNumber); bios_version=(CleanValue -Value (($bios.SMBIOSBIOSVersion -join ' ')));\r\n    windows_license_status=$licenseStatus; windows_license_channel=$licenseChannel; windows_partial_product_key=$partialKey; windows_oem_key=$oemKey; collector_version='${APP_VERSION}'\r\n  }\r\n`+
 `  Add-Type -AssemblyName System.Web.Extensions\r\n  $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer\r\n  $request=@{p_payload=$payload}\r\n  $json=$serializer.Serialize($request)\r\n  $wc=New-Object System.Net.WebClient\r\n  $wc.Encoding=[Text.Encoding]::UTF8\r\n  $wc.Headers.Add('apikey',$AnonKey)\r\n  $wc.Headers.Add('Authorization',('Bearer '+$AnonKey))\r\n  $wc.Headers.Add('Content-Type','application/json')\r\n  $result=$wc.UploadString($SupabaseEndpoint,'POST',$json)\r\n`+
 `  Write-Host ''\r\n  if($result -match '"already_registered"\\s*:\\s*true'){\r\n    Write-Host 'INVENTARIO YA COMPLETADO.' -ForegroundColor Green\r\n    Write-Host 'Este equipo ya fue relevado correctamente 3 veces y ya se encuentra cargado al inventario principal de la Direccion de Informatica - Ministerio de Educacion Tucuman.' -ForegroundColor Yellow\r\n  } else {\r\n    $attempt=''; if($result -match '"attempt_count"\\s*:\\s*(\\d+)'){$attempt=$matches[1]}\r\n    Write-Host 'OK - Datos guardados correctamente.' -ForegroundColor Green\r\n    if($attempt){Write-Host ('Ejecucion registrada: '+$attempt+' de 3.') -ForegroundColor Cyan}\r\n    Write-Host ('Equipo: '+$EquipmentName+' | Oficina: '+$OfficeName) -ForegroundColor Gray\r\n  }\r\n`+
 `  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 0\r\n`+
@@ -114,7 +114,11 @@ function buildBat(ps,name){
  return ['@echo off','setlocal EnableExtensions','chcp 65001 >nul','title RELEVAMIENTO MANAGER - Registro de equipo','echo.','echo ============================================================','echo  RELEVAMIENTO MANAGER - Direccion de Informatica','echo  Ministerio de Educacion Tucuman','echo ============================================================',`echo  Preparando recopilador para ${safeName}`,'echo.','set "B64=%TEMP%\\medtuc_collector_%RANDOM%.b64"','set "PS1=%TEMP%\\medtuc_collector_%RANDOM%.ps1"','break>"%B64%"',...chunks.map(c=>`>>"%B64%" echo ${c}`),`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$b=[IO.File]::ReadAllText($env:B64).Replace([Environment]::NewLine,'').Replace(' ','');[IO.File]::WriteAllBytes($env:PS1,[Convert]::FromBase64String($b)); & $env:PS1; exit $LASTEXITCODE"`,'set "RC=%ERRORLEVEL%"','del /q "%B64%" "%PS1%" >nul 2>&1','echo.','echo RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina','echo by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados','if not "%RC%"=="0" (echo. & echo El recopilador finalizo con errores. & pause)','exit /b %RC%'].join('\r\n')+'\r\n';
 }
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
-async function getSubmissionStatus(eid){const {data,error}=await sb.rpc('inventory_submission_status',{p_equipment_id:eid});if(error)throw error;return Array.isArray(data)?data[0]:data}
+async function getSubmissionStatus(token){
+ const {data,error}=await sb.rpc('inventory_submission_status',{p_submission_token:token});
+ if(error)throw error;
+ return Array.isArray(data)?data[0]:data;
+}
 function setPollVisual(mode,title,text){
  const card=$('#pollCard'); if(!card)return;
  card.classList.remove('hidden');
@@ -134,33 +138,48 @@ function inventoryProcessStatus(count){
  return ['warn','Pendiente'];
 }
 async function downloadCollector(){
- const oid=$('#officeSelect').value,eid=$('#equipmentSelect').value;if(!oid||!eid)return msg('warning','Faltan datos','Seleccioná oficina y equipo.');
+ const oid=$('#officeSelect').value,eid=$('#equipmentSelect').value;
+ if(!oid||!eid)return msg('warning','Faltan datos','Seleccioná oficina y equipo.');
  const on=$('#officeSelect').selectedOptions[0].textContent,en=$('#equipmentSelect').selectedOptions[0].textContent;
- let row={exists:false,submission_count:0,completed:false};try{row=(await getSubmissionStatus(eid))||row}catch(e){console.warn('No se pudo leer estado previo',e)}
- if(row?.completed)return msg('success','Relevamiento completado','Este equipo ya fue relevado correctamente 3 veces y está cargado al inventario principal de la Dirección de Informática - Ministerio de Educación Tucumán.');
- const baseline=Number(row?.submission_count||0);state.collectorBaseline=baseline;
- const ps=collectorPS(oid,eid,on,en),bat=buildBat(ps,en),fn='MEDTUC_'+en.replace(/[^\w.-]+/g,'_')+'.bat';
+ const token=crypto.randomUUID();
+ state.collectorToken=token;
+
+ const ps=collectorPS(oid,eid,on,en,token),bat=buildBat(ps,en),fn='MEDTUC_'+en.replace(/[^\w.-]+/g,'_')+'.bat';
  downloadBlob(new Blob([bat],{type:'application/x-bat;charset=utf-8'}),fn);
- setPollVisual('waiting','Esperando datos del equipo...',`Ejecutá ${fn} con doble clic. Esta será la ejecución ${baseline+1} de 3.`);
- Swal.fire({...swal,title:'Esperando relevamiento...',html:`<b>${esc(en)}</b><br><br>Ejecutá <b>${esc(fn)}</b> con doble clic.<br>Esta ventana se cerrará automáticamente cuando Supabase confirme la carga.<br><small>Ejecución esperada: ${baseline+1} de 3.</small>`,allowOutsideClick:false,allowEscapeKey:true,showCancelButton:true,showConfirmButton:false,cancelButtonText:'Cerrar espera',didOpen:()=>Swal.showLoading()});
- if(state.poll)clearInterval(state.poll);const started=Date.now();
+
+ setPollVisual('waiting','Esperando datos del equipo...',`Ejecutá ${fn} con doble clic. El sistema identificará físicamente esta PC y confirmará la carga.`);
+ Swal.fire({...swal,title:'Esperando relevamiento...',html:`<b>${esc(en)}</b><br><br>Ejecutá <b>${esc(fn)}</b> con doble clic.<br>Esta ventana se cerrará automáticamente cuando Supabase confirme la carga.`,allowOutsideClick:false,allowEscapeKey:true,showCancelButton:true,showConfirmButton:false,cancelButtonText:'Cerrar espera',didOpen:()=>Swal.showLoading()});
+
+ if(state.poll)clearInterval(state.poll);
+ const started=Date.now();
  state.poll=setInterval(async()=>{try{
-   const r=await getSubmissionStatus(eid);
-   if(r?.exists&&Number(r.submission_count||0)>baseline){
+   const r=await getSubmissionStatus(token);
+   if(r?.exists){
      clearInterval(state.poll);state.poll=null;Swal.close();
-     setPollVisual('success','Equipo registrado correctamente',`Registro confirmado. Ejecución ${r.submission_count} de 3.`);
+     const count=Number(r.submission_count||0);
+     const result=String(r.submission_result||'').toLowerCase();
+
+     if(result==='already_completed'){
+       setPollVisual('success','Relevamiento ya completado',`Este equipo ya había alcanzado el máximo de 3 relevamientos.`);
+       if(state.user)await loadInventory();
+       await msg('success','Equipo ya relevado',`Este equipo ya se encontraba completo (3/3) en el inventario principal.`);
+       return;
+     }
+
+     const title=result==='completed'?'Relevamiento completado':result==='updated'?'Equipo actualizado correctamente':'Equipo registrado correctamente';
+     setPollVisual('success',title,`Registro confirmado. Ejecución ${count} de 3.`);
      if(state.user)await loadInventory();
-     await msg('success','Carga finalizada correctamente',`El equipo ${en} fue guardado en el inventario principal (${r.submission_count}/3).`);
+     await msg('success','Carga finalizada correctamente',`El equipo ${en} fue guardado en el inventario principal (${count}/3).`);
      return;
    }
+
    if(Date.now()-started>10*60*1000){
      clearInterval(state.poll);state.poll=null;Swal.close();
      setPollVisual('warning','No se confirmó una nueva carga','Podés volver a ejecutar el recopilador. No se registró una nueva ejecución.');
-     await msg('warning','Tiempo de espera agotado','No se confirmó una nueva carga en 10 minutos. Podés volver a ejecutar el recopilador.');
+     await msg('warning','Tiempo de espera agotado','No se confirmó una carga en 10 minutos. Podés volver a ejecutar el recopilador.');
    }
  }catch(e){console.warn('Polling de inventario',e)}},2500);
 }
-async function pollInventory(eid){try{const r=await getSubmissionStatus(eid);if(r?.exists){setPollVisual('success','Equipo registrado correctamente',`Registro confirmado. Ejecución ${r.submission_count} de 3.`)}}catch(e){console.warn(e)}}
 
 async function openAdmin(){switchView('#adminView');if(sb){const {data}=await sb.auth.getSession();if(data.session)await hydrateSession(data.session)}}
 async function login(ev){ev.preventDefault();const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)return msg('error','No se pudo ingresar',error.message);await hydrateSession(data.session)}

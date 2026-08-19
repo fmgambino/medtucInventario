@@ -1,11 +1,11 @@
 {
-  "latest_version": "1.0.2",
-  "published_at": "2026-08-19T13:35:00-03:00",
+  "latest_version": "1.0.3",
+  "published_at": "2026-08-19T14:55:00-03:00",
   "patches": [
     {
-      "from": "1.0.1",
-      "to": "1.0.2",
-      "file": "updates/RELEVAMIENTO_MANAGER_patch_1.0.1_to_1.0.2.zip"
+      "from": "1.0.2",
+      "to": "1.0.3",
+      "file": "updates/RELEVAMIENTO_MANAGER_patch_1.0.2_to_1.0.3_CRITICAL.zip"
     }
   ]
 }
