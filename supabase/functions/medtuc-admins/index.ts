@@ -17,7 +17,8 @@ Deno.serve(async (req) => {
   try {
     const url=Deno.env.get('SUPABASE_URL')!
     const service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}})
+    if(!url||!service) return json({error:'Faltan secretos internos de Supabase'},500)
+    const admin=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}})
     const token=(req.headers.get('Authorization')||'').replace(/^Bearer\s+/i,'')
     if(!token) return json({error:'Sesión requerida'},401)
 
@@ -30,8 +31,7 @@ Deno.serve(async (req) => {
 
     let body:any={}
     try{body=await req.json()}catch{return json({error:'JSON inválido'},400)}
-
-    if(body.action==='health') return json({ok:true,function:'medtuc-admins'})
+    if(body.action==='health') return json({ok:true,function:'medtuc-admins',version:'1.0.1'})
 
     if(body.action==='list'){
       const {data:rows,error}=await admin.from('admin_users').select('user_id,role,display_name,created_at').order('created_at')
@@ -50,17 +50,28 @@ Deno.serve(async (req) => {
       if(!display_name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8)
         return json({error:'Nombre, email o contraseña inválidos. La contraseña debe tener al menos 8 caracteres.'},400)
 
-      const {data:created,error:ce}=await admin.auth.admin.createUser({
-        email,password,email_confirm:true,user_metadata:{display_name,created_by:caller.id,created_by_email:caller.email}
-      })
-      if(ce||!created.user) return json({error:ce?.message||'No se pudo crear la cuenta'},400)
+      // Reutiliza una cuenta Auth existente si un intento anterior quedó a mitad de camino.
+      const {data:list,error:listError}=await admin.auth.admin.listUsers({page:1,perPage:1000})
+      if(listError) return json({error:listError.message},500)
+      let target=(list.users||[]).find(u=>(u.email||'').toLowerCase()===email)
+      let createdNow=false
+      if(!target){
+        const {data:created,error:ce}=await admin.auth.admin.createUser({
+          email,password,email_confirm:true,user_metadata:{display_name,created_by:caller.id,created_by_email:caller.email}
+        })
+        if(ce||!created.user) return json({error:ce?.message||'No se pudo crear la cuenta'},400)
+        target=created.user; createdNow=true
+      } else {
+        const {error:updateError}=await admin.auth.admin.updateUserById(target.id,{password,user_metadata:{...(target.user_metadata||{}),display_name}})
+        if(updateError) return json({error:updateError.message},400)
+      }
 
-      const {error:ie}=await admin.from('admin_users').insert({user_id:created.user.id,role,display_name})
+      const {error:ie}=await admin.from('admin_users').upsert({user_id:target.id,role,display_name},{onConflict:'user_id'})
       if(ie){
-        await admin.auth.admin.deleteUser(created.user.id).catch(()=>{})
+        if(createdNow) await admin.auth.admin.deleteUser(target.id).catch(()=>{})
         return json({error:ie.message},500)
       }
-      return json({ok:true,user:{id:created.user.id,email,display_name,role}},201)
+      return json({ok:true,user:{id:target.id,email,display_name,role}},createdNow?201:200)
     }
 
     if(body.action==='set-role'){

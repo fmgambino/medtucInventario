@@ -1,11 +1,11 @@
 (() => {
 'use strict';
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.0.2';
 const C=window.MEDTUC_CONFIG||{};
 const configured=Boolean(C.SUPABASE_URL&&C.SUPABASE_ANON_KEY);
 const sb=configured?window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY):null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null};
+const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorBaseline:0};
 const swal={background:'#101827',color:'#edf4ff',confirmButtonColor:'#6ca8ff',cancelButtonColor:'#65758a'};
 const msg=(icon,title,text='')=>Swal.fire({...swal,icon,title,text,confirmButtonText:'Aceptar'});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -31,11 +31,15 @@ async function loadSettings(){
 }
 function applyDynamicManifest(name,shortName,icon){
  try{
-   const m={name,short_name:shortName,start_url:'./',display:'standalone',background_color:'#08111f',theme_color:'#08111f',
-     icons:[{src:icon,sizes:'192x192',purpose:'any'},{src:icon,sizes:'512x512',purpose:'any maskable'}]};
+   const base=new URL(C.PROJECT_URL||location.href,location.href);
+   const startUrl=base.href.endsWith('/')?base.href:base.href.replace(/[^/]*$/,'');
+   const iconUrl=new URL(icon,startUrl).href;
+   const m={name,short_name:shortName,start_url:startUrl,scope:startUrl,display:'standalone',background_color:'#08111f',theme_color:'#08111f',
+     icons:[{src:iconUrl,sizes:'192x192',purpose:'any'},{src:iconUrl,sizes:'512x512',purpose:'any maskable'}]};
    const blob=new Blob([JSON.stringify(m)],{type:'application/manifest+json'});
-   const url=URL.createObjectURL(blob); $('#manifestLink').href=url;
- }catch{}
+   if(state.manifestObjectUrl)URL.revokeObjectURL(state.manifestObjectUrl);
+   state.manifestObjectUrl=URL.createObjectURL(blob); $('#manifestLink').href=state.manifestObjectUrl;
+ }catch(e){console.warn('No se pudo actualizar manifest dinámico',e)}
 }
 async function uploadBranding(file,prefix){
  if(!file)return null;
@@ -87,41 +91,76 @@ async function createCatalog(type){
 function psQuote(v){return String(v??'').replace(/'/g,"''")}
 function collectorPS(officeId,equipmentId,officeName,equipmentName){
  const endpoint=C.SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/register_inventory';
- return `$ErrorActionPreference='Stop'\r\n`+
-`$Endpoint='${psQuote(endpoint)}'\r\n$Anon='${psQuote(C.SUPABASE_ANON_KEY)}'\r\n$OfficeId='${psQuote(officeId)}'\r\n$EquipmentId='${psQuote(equipmentId)}'\r\n$OfficeName='${psQuote(officeName)}'\r\n$EquipmentName='${psQuote(equipmentName)}'\r\n`+
-`function CVal{param([object]$V,[string]$F='No detectado');if($null -eq $V){return $F};$T=([string]$V).Trim();if([string]::IsNullOrEmpty($T)){return $F};return $T}\r\n`+
-`try{\r\ntry{[Net.ServicePointManager]::SecurityProtocol=[Enum]::ToObject([Net.SecurityProtocolType],3072)}catch{}\r\n`+
-`Write-Host '============================================================' -ForegroundColor DarkCyan\r\nWrite-Host ' RELEVAMIENTO MANAGER - RECOPILADOR v${APP_VERSION}' -ForegroundColor Cyan\r\nWrite-Host ' Direccion de Informatica - Ministerio de Educacion Tucuman' -ForegroundColor Gray\r\nWrite-Host '============================================================' -ForegroundColor DarkCyan\r\n`+
-`$cs=Get-WmiObject Win32_ComputerSystem|Select-Object -First 1;$csp=Get-WmiObject Win32_ComputerSystemProduct|Select-Object -First 1;$cpu=Get-WmiObject Win32_Processor|Select-Object -First 1;$os=Get-WmiObject Win32_OperatingSystem|Select-Object -First 1;$board=Get-WmiObject Win32_BaseBoard|Select-Object -First 1;$bios=Get-WmiObject Win32_BIOS|Select-Object -First 1;$gpu=Get-WmiObject Win32_VideoController|Where-Object{$_.Name}|Select-Object -First 1;$disks=@(Get-WmiObject Win32_DiskDrive|Where-Object{[double]$_.Size -gt 0});$rams=@(Get-WmiObject Win32_PhysicalMemory)\r\n`+
-`$rb=($rams|Measure-Object Capacity -Sum).Sum;if(-not $rb){$rb=$cs.TotalPhysicalMemory};$ramGB=[math]::Round(([double]$rb/1GB),0);$mm=@{20='DDR';21='DDR2';24='DDR3';26='DDR4';34='DDR5'};$rt=@();foreach($m in $rams){$tc=0;if($m.PSObject.Properties['SMBIOSMemoryType']){$tc=[int]$m.SMBIOSMemoryType};if($mm.ContainsKey($tc)){$rt+=$mm[$tc]}elseif($m.MemoryType -and $mm.ContainsKey([int]$m.MemoryType)){$rt+=$mm[[int]$m.MemoryType]}};$ramType=if($rt.Count){($rt|Select-Object -Unique)-join ', '}else{'No detectado'}\r\n`+
-`$sp=@();foreach($d in $disks){$gb=[math]::Round(([double]$d.Size/1GB),0);$dm=CVal $d.Model;$kind='HDD';if(($d.MediaType -match 'SSD|Solid')-or($dm -match 'SSD|Solid')){$kind='SSD'}elseif($d.InterfaceType -match 'USB'){$kind='USB'};$sp+=("{0} GB ({1}) {2}"-f $gb,$kind,$dm)};$storage=if($sp.Count){$sp -join ' + '}else{'No detectado'}\r\n`+
-`$cv='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';$dv='';$pid='';try{$reg=Get-ItemProperty $cv;$dv=if($reg.DisplayVersion){$reg.DisplayVersion}elseif($reg.ReleaseId){$reg.ReleaseId}else{''};$pid=$reg.ProductId}catch{};$arch=CVal $os.OSArchitecture;if($arch -eq 'No detectado'){$arch=if([IntPtr]::Size -eq 8){'64 bits'}else{'32 bits'}};$inst='';try{$inst=[Management.ManagementDateTimeConverter]::ToDateTime($os.InstallDate).ToString('yyyy-MM-dd HH:mm:ss')}catch{}\r\n`+
-`$ls='Desconocido';$lc='No detectado';$pk='';$ok='';try{$lic=Get-WmiObject SoftwareLicensingProduct|Where-Object{$_.PartialProductKey -and $_.Name -match 'Windows'}|Sort-Object LicenseStatus -Descending|Select-Object -First 1;if($lic){if([int]$lic.LicenseStatus -eq 1){$ls='Licenciado'}else{$ls='No licenciado'};$pk=CVal $lic.PartialProductKey '';$lc=CVal $lic.Description}}catch{};try{$svc=Get-WmiObject SoftwareLicensingService|Select-Object -First 1;if($svc.PSObject.Properties['OA3xOriginalProductKey']){$ok=CVal $svc.OA3xOriginalProductKey ''}}catch{}\r\n`+
-`$bm=CVal $board.Manufacturer '';$bp=CVal $board.Product '';$mb=("$bm $bp").Trim();if(!$mb){$mb='No detectado'};$fn=$env:COMPUTERNAME;if($cs.Domain -and $cs.Domain -ne 'WORKGROUP' -and $cs.Domain -ne $env:COMPUTERNAME){$fn="$($env:COMPUTERNAME).$($cs.Domain)"}\r\n`+
-`$p=@{office_id=$OfficeId;equipment_id=$EquipmentId;office_name=$OfficeName;equipment_name=$EquipmentName;brand=(CVal $cs.Manufacturer);model=(CVal $cs.Model);processor=(CVal $cpu.Name);cores=[int]$cpu.NumberOfCores;operating_system=("{0} ({1})"-f(CVal $os.Caption),$arch);motherboard=$mb;ram_gb=[int]$ramGB;ram_type=$ramType;storage=$storage;graphics=(CVal $gpu.Name);hostname=$env:COMPUTERNAME;full_device_name=$fn;domain_workgroup=(CVal $cs.Domain);system_type=(CVal $cs.SystemType);device_uuid=(CVal $csp.UUID);product_id=(CVal $pid);windows_version=(CVal $dv);windows_build=(CVal $os.BuildNumber);windows_install_date=(CVal $inst);bios_serial=(CVal $bios.SerialNumber);bios_version=(CVal (($bios.SMBIOSBIOSVersion -join ' ')));windows_license_status=$ls;windows_license_channel=$lc;windows_partial_product_key=$pk;windows_oem_key=$ok;collector_version='${APP_VERSION}'}\r\n`+
-`Add-Type -AssemblyName System.Web.Extensions;$s=New-Object System.Web.Script.Serialization.JavaScriptSerializer;$j=$s.Serialize(@{p_payload=$p});$w=New-Object Net.WebClient;$w.Encoding=[Text.Encoding]::UTF8;$w.Headers.Add('apikey',$Anon);$w.Headers.Add('Authorization','Bearer '+$Anon);$w.Headers.Add('Content-Type','application/json');$r=$w.UploadString($Endpoint,'POST',$j)\r\n`+
-`Write-Host '';Write-Host 'DATOS GUARDADOS CORRECTAMENTE.' -ForegroundColor Green;Write-Host $r -ForegroundColor Cyan\r\n`+
-`Write-Host '';Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray;Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray;Read-Host 'Presione ENTER para cerrar'\r\n`+
-`}catch{Write-Host '';Write-Host ('ERROR: '+$_.Exception.Message) -ForegroundColor Red;Write-Host 'Verifique Internet e intente nuevamente.' -ForegroundColor Yellow;Write-Host '';Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray;Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray;Read-Host 'Presione ENTER para cerrar';exit 1}\r\n`;
+ return `$ErrorActionPreference = 'Stop'\r\n`+
+`$SupabaseEndpoint='${psQuote(endpoint)}'\r\n$AnonKey='${psQuote(C.SUPABASE_ANON_KEY)}'\r\n$OfficeId='${psQuote(officeId)}'\r\n$EquipmentId='${psQuote(equipmentId)}'\r\n$OfficeName='${psQuote(officeName)}'\r\n$EquipmentName='${psQuote(equipmentName)}'\r\n`+
+`function CleanValue { param([object]$Value,[string]$Fallback='No detectado'); if($null -eq $Value){return $Fallback}; $Text=([string]$Value).Trim(); if([string]::IsNullOrEmpty($Text)){return $Fallback}; return $Text }\r\n`+
+`try {\r\n  try {[Net.ServicePointManager]::SecurityProtocol = [Enum]::ToObject([Net.SecurityProtocolType],3072)} catch {}\r\n`+
+`  Write-Host ''\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host ' RELEVAMIENTO MANAGER - RECOPILADOR v${APP_VERSION}' -ForegroundColor Cyan\r\n  Write-Host ' Direccion de Informatica - Ministerio de Educacion Tucuman' -ForegroundColor Gray\r\n  Write-Host '============================================================' -ForegroundColor DarkCyan\r\n  Write-Host 'Recopilando datos del equipo...' -ForegroundColor White\r\n`+
+`  $cs=Get-WmiObject -Class Win32_ComputerSystem | Select-Object -First 1\r\n  $csp=Get-WmiObject -Class Win32_ComputerSystemProduct | Select-Object -First 1\r\n  $cpu=Get-WmiObject -Class Win32_Processor | Select-Object -First 1\r\n  $os=Get-WmiObject -Class Win32_OperatingSystem | Select-Object -First 1\r\n  $board=Get-WmiObject -Class Win32_BaseBoard | Select-Object -First 1\r\n  $bios=Get-WmiObject -Class Win32_BIOS | Select-Object -First 1\r\n  $gpu=Get-WmiObject -Class Win32_VideoController | Where-Object {$_.Name} | Select-Object -First 1\r\n  $disks=@(Get-WmiObject -Class Win32_DiskDrive | Where-Object {[double]$_.Size -gt 0})\r\n  $rams=@(Get-WmiObject -Class Win32_PhysicalMemory)\r\n`+
+`  $ramBytes=($rams | Measure-Object -Property Capacity -Sum).Sum\r\n  if(-not $ramBytes){$ramBytes=$cs.TotalPhysicalMemory}\r\n  $ramGB=[math]::Round(([double]$ramBytes/1GB),0)\r\n  $memMap=@{20='DDR';21='DDR2';22='DDR2 FB-DIMM';24='DDR3';26='DDR4';34='DDR5'}\r\n  $ramTypes=@()\r\n  foreach($mem in $rams){$typeCode=0; if($mem.PSObject.Properties['SMBIOSMemoryType']){$typeCode=[int]$mem.SMBIOSMemoryType}; if($memMap.ContainsKey($typeCode)){$ramTypes+=$memMap[$typeCode]} elseif($mem.MemoryType -and $memMap.ContainsKey([int]$mem.MemoryType)){$ramTypes+=$memMap[[int]$mem.MemoryType]}}\r\n  $ramType=if($ramTypes.Count -gt 0){($ramTypes | Select-Object -Unique) -join ', '}else{'No detectado'}\r\n`+
+`  $storageParts=@(); foreach($disk in $disks){$gb=[math]::Round(([double]$disk.Size/1GB),0);$diskModel=CleanValue -Value $disk.Model;$kind='HDD';if(($disk.MediaType -match 'SSD|Solid') -or ($diskModel -match 'SSD|Solid')){$kind='SSD'}elseif($disk.InterfaceType -match 'USB'){$kind='USB'};$storageParts+=("{0} GB ({1}) {2}" -f $gb,$kind,$diskModel)}\r\n  $storage=if($storageParts.Count -gt 0){$storageParts -join ' + '}else{'No detectado'}\r\n  $fullName=$env:COMPUTERNAME; if($cs.Domain -and $cs.Domain -ne 'WORKGROUP' -and $cs.Domain -ne $env:COMPUTERNAME){$fullName="$($env:COMPUTERNAME).$($cs.Domain)"}\r\n  $installDate=''; try{$installDate=[Management.ManagementDateTimeConverter]::ToDateTime($os.InstallDate).ToString('yyyy-MM-dd HH:mm:ss')}catch{}\r\n`+
+`  $cv='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';$displayVersion='';$windowsProductId='';try{$reg=Get-ItemProperty -Path $cv;$displayVersion=if($reg.DisplayVersion){$reg.DisplayVersion}elseif($reg.ReleaseId){$reg.ReleaseId}else{''};$windowsProductId=$reg.ProductId}catch{}\r\n  $arch=CleanValue -Value $os.OSArchitecture; if($arch -eq 'No detectado'){if([IntPtr]::Size -eq 8){$arch='64 bits'}else{$arch='32 bits'}}\r\n`+
+`  $licenseStatus='Desconocido';$licenseChannel='No detectado';$partialKey='';$oemKey=''\r\n  try {$lic=Get-WmiObject -Class SoftwareLicensingProduct | Where-Object {$_.PartialProductKey -and $_.Name -match 'Windows'} | Sort-Object LicenseStatus -Descending | Select-Object -First 1; if($lic){if([int]$lic.LicenseStatus -eq 1){$licenseStatus='Licenciado'}else{$licenseStatus='No licenciado'};$partialKey=CleanValue -Value $lic.PartialProductKey -Fallback '';$licenseChannel=CleanValue -Value $lic.Description}} catch {}\r\n  try {$svc=Get-WmiObject -Class SoftwareLicensingService | Select-Object -First 1; if($svc -and $svc.PSObject.Properties['OA3xOriginalProductKey']){$oemKey=CleanValue -Value $svc.OA3xOriginalProductKey -Fallback ''}} catch {}\r\n`+
+`  $boardManufacturer=CleanValue -Value $board.Manufacturer -Fallback ''\r\n  $boardProduct=CleanValue -Value $board.Product -Fallback ''\r\n  $motherboard=("{0} {1}" -f $boardManufacturer,$boardProduct).Trim(); if([string]::IsNullOrEmpty($motherboard)){$motherboard='No detectado'}\r\n`+
+`  $payload=@{\r\n    office_id=$OfficeId; equipment_id=$EquipmentId; office_name=$OfficeName; equipment_name=$EquipmentName;\r\n    brand=(CleanValue -Value $cs.Manufacturer); model=(CleanValue -Value $cs.Model); processor=(CleanValue -Value $cpu.Name); cores=[int]$cpu.NumberOfCores;\r\n    operating_system=("{0} ({1})" -f (CleanValue -Value $os.Caption),$arch); windows_version=(CleanValue -Value $displayVersion); windows_build=(CleanValue -Value $os.BuildNumber); windows_install_date=(CleanValue -Value $installDate);\r\n    motherboard=$motherboard; ram_gb=[int]$ramGB; ram_type=$ramType; storage=$storage; graphics=(CleanValue -Value $gpu.Name);\r\n    hostname=$env:COMPUTERNAME; full_device_name=$fullName; domain_workgroup=(CleanValue -Value $cs.Domain); system_type=(CleanValue -Value $cs.SystemType);\r\n    device_uuid=(CleanValue -Value $csp.UUID); product_id=(CleanValue -Value $windowsProductId); bios_serial=(CleanValue -Value $bios.SerialNumber); bios_version=(CleanValue -Value (($bios.SMBIOSBIOSVersion -join ' ')));\r\n    windows_license_status=$licenseStatus; windows_license_channel=$licenseChannel; windows_partial_product_key=$partialKey; windows_oem_key=$oemKey; collector_version='${APP_VERSION}'\r\n  }\r\n`+
+`  Add-Type -AssemblyName System.Web.Extensions\r\n  $serializer=New-Object System.Web.Script.Serialization.JavaScriptSerializer\r\n  $request=@{p_payload=$payload}\r\n  $json=$serializer.Serialize($request)\r\n  $wc=New-Object System.Net.WebClient\r\n  $wc.Encoding=[Text.Encoding]::UTF8\r\n  $wc.Headers.Add('apikey',$AnonKey)\r\n  $wc.Headers.Add('Authorization',('Bearer '+$AnonKey))\r\n  $wc.Headers.Add('Content-Type','application/json')\r\n  $result=$wc.UploadString($SupabaseEndpoint,'POST',$json)\r\n`+
+`  Write-Host ''\r\n  if($result -match '"already_registered"\\s*:\\s*true'){\r\n    Write-Host 'INVENTARIO YA COMPLETADO.' -ForegroundColor Green\r\n    Write-Host 'Este equipo ya fue relevado correctamente 3 veces y ya se encuentra cargado al inventario principal de la Direccion de Informatica - Ministerio de Educacion Tucuman.' -ForegroundColor Yellow\r\n  } else {\r\n    $attempt=''; if($result -match '"attempt_count"\\s*:\\s*(\\d+)'){$attempt=$matches[1]}\r\n    Write-Host 'OK - Datos guardados correctamente.' -ForegroundColor Green\r\n    if($attempt){Write-Host ('Ejecucion registrada: '+$attempt+' de 3.') -ForegroundColor Cyan}\r\n    Write-Host ('Equipo: '+$EquipmentName+' | Oficina: '+$OfficeName) -ForegroundColor Gray\r\n  }\r\n`+
+`  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 0\r\n`+
+`} catch {\r\n  Write-Host ''\r\n  Write-Host ('ERROR: '+$_.Exception.Message) -ForegroundColor Red\r\n  Write-Host 'Verifique la conexion a Internet e intente nuevamente.' -ForegroundColor Yellow\r\n  Write-Host ''\r\n  Write-Host 'RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina' -ForegroundColor DarkGray\r\n  Write-Host 'by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados' -ForegroundColor DarkGray\r\n  Read-Host 'Presione ENTER para cerrar'\r\n  exit 1\r\n}\r\n`;
 }
-function utf16leBase64(s){let bin='';for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);bin+=String.fromCharCode(c&255,c>>8)}return btoa(bin)}
-function buildBat(ps,name){const b64=utf16leBase64(ps);return `@echo off\r\nchcp 65001 >nul\r\ntitle RELEVAMIENTO MANAGER - Registro de equipo\r\necho RELEVAMIENTO MANAGER - Direccion de Informatica\r\necho Ministerio de Educacion Tucuman\r\necho Preparando recopilador para ${name.replace(/[&|<>^%]/g,'')}\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${b64}\r\n`}
+function utf8BomBase64(text){const bytes=new TextEncoder().encode('\uFEFF'+text);let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(bin)}
+function buildBat(ps,name){
+ const b64=utf8BomBase64(ps),chunks=b64.match(/.{1,700}/g)||[],safeName=name.replace(/[&|<>^%]/g,'');
+ return ['@echo off','setlocal EnableExtensions','chcp 65001 >nul','title RELEVAMIENTO MANAGER - Registro de equipo','echo.','echo ============================================================','echo  RELEVAMIENTO MANAGER - Direccion de Informatica','echo  Ministerio de Educacion Tucuman','echo ============================================================',`echo  Preparando recopilador para ${safeName}`,'echo.','set "B64=%TEMP%\\medtuc_collector_%RANDOM%.b64"','set "PS1=%TEMP%\\medtuc_collector_%RANDOM%.ps1"','break>"%B64%"',...chunks.map(c=>`>>"%B64%" echo ${c}`),`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$b=[IO.File]::ReadAllText($env:B64).Replace([Environment]::NewLine,'').Replace(' ','');[IO.File]::WriteAllBytes($env:PS1,[Convert]::FromBase64String($b)); & $env:PS1; exit $LASTEXITCODE"`,'set "RC=%ERRORLEVEL%"','del /q "%B64%" "%PS1%" >nul 2>&1','echo.','echo RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina','echo by Ing. Fernando Gambino - https://github.com/fmgambino - Todos los Derechos Registrados','if not "%RC%"=="0" (echo. & echo El recopilador finalizo con errores. & pause)','exit /b %RC%'].join('\r\n')+'\r\n';
+}
 function downloadBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
+async function getSubmissionStatus(eid){const {data,error}=await sb.rpc('inventory_submission_status',{p_equipment_id:eid});if(error)throw error;return Array.isArray(data)?data[0]:data}
+function setPollVisual(mode,title,text){
+ const card=$('#pollCard'); if(!card)return;
+ card.classList.remove('hidden');
+ const icon=card.querySelector('.spinner,.poll-success,.poll-warning');
+ if(icon){
+   icon.className=mode==='success'?'poll-success':mode==='warning'?'poll-warning':'spinner';
+   icon.textContent=mode==='success'?'✓':mode==='warning'?'!':'';
+ }
+ $('#pollTitle').textContent=title;
+ $('#pollText').textContent=text;
+}
+function inventoryProcessStatus(count){
+ const n=Number(count||0);
+ if(n>=3)return ['ok','Completo'];
+ if(n===2)return ['info','Actualizado'];
+ if(n===1)return ['ok','Registrado'];
+ return ['warn','Pendiente'];
+}
 async function downloadCollector(){
  const oid=$('#officeSelect').value,eid=$('#equipmentSelect').value;if(!oid||!eid)return msg('warning','Faltan datos','Seleccioná oficina y equipo.');
  const on=$('#officeSelect').selectedOptions[0].textContent,en=$('#equipmentSelect').selectedOptions[0].textContent;
- const {data:st}=await sb.rpc('inventory_submission_status',{p_equipment_id:eid});
- const row=Array.isArray(st)?st[0]:st;if(row?.completed)return msg('success','Relevamiento completado','Este equipo ya fue relevado correctamente 3 veces y está cargado al inventario principal.');
+ let row={exists:false,submission_count:0,completed:false};try{row=(await getSubmissionStatus(eid))||row}catch(e){console.warn('No se pudo leer estado previo',e)}
+ if(row?.completed)return msg('success','Relevamiento completado','Este equipo ya fue relevado correctamente 3 veces y está cargado al inventario principal de la Dirección de Informática - Ministerio de Educación Tucumán.');
+ const baseline=Number(row?.submission_count||0);state.collectorBaseline=baseline;
  const ps=collectorPS(oid,eid,on,en),bat=buildBat(ps,en),fn='MEDTUC_'+en.replace(/[^\w.-]+/g,'_')+'.bat';
- downloadBlob(new Blob([bat],{type:'application/x-bat'}),fn);
- $('#pollCard').classList.remove('hidden');$('#pollText').textContent=`Ejecutá ${fn}. Esta será la ejecución ${(row?.submission_count||0)+1} de 3.`;
- if(state.poll)clearInterval(state.poll);state.poll=setInterval(()=>pollInventory(eid),3000);
- msg('info','Recopilador descargado',`Abrí ${fn} con doble clic.`);
+ downloadBlob(new Blob([bat],{type:'application/x-bat;charset=utf-8'}),fn);
+ setPollVisual('waiting','Esperando datos del equipo...',`Ejecutá ${fn} con doble clic. Esta será la ejecución ${baseline+1} de 3.`);
+ Swal.fire({...swal,title:'Esperando relevamiento...',html:`<b>${esc(en)}</b><br><br>Ejecutá <b>${esc(fn)}</b> con doble clic.<br>Esta ventana se cerrará automáticamente cuando Supabase confirme la carga.<br><small>Ejecución esperada: ${baseline+1} de 3.</small>`,allowOutsideClick:false,allowEscapeKey:true,showCancelButton:true,showConfirmButton:false,cancelButtonText:'Cerrar espera',didOpen:()=>Swal.showLoading()});
+ if(state.poll)clearInterval(state.poll);const started=Date.now();
+ state.poll=setInterval(async()=>{try{
+   const r=await getSubmissionStatus(eid);
+   if(r?.exists&&Number(r.submission_count||0)>baseline){
+     clearInterval(state.poll);state.poll=null;Swal.close();
+     setPollVisual('success','Equipo registrado correctamente',`Registro confirmado. Ejecución ${r.submission_count} de 3.`);
+     if(state.user)await loadInventory();
+     await msg('success','Carga finalizada correctamente',`El equipo ${en} fue guardado en el inventario principal (${r.submission_count}/3).`);
+     return;
+   }
+   if(Date.now()-started>10*60*1000){
+     clearInterval(state.poll);state.poll=null;Swal.close();
+     setPollVisual('warning','No se confirmó una nueva carga','Podés volver a ejecutar el recopilador. No se registró una nueva ejecución.');
+     await msg('warning','Tiempo de espera agotado','No se confirmó una nueva carga en 10 minutos. Podés volver a ejecutar el recopilador.');
+   }
+ }catch(e){console.warn('Polling de inventario',e)}},2500);
 }
-async function pollInventory(eid){
- const {data}=await sb.rpc('inventory_submission_status',{p_equipment_id:eid});const r=Array.isArray(data)?data[0]:data;
- if(r?.exists){clearInterval(state.poll);$('#pollTitle').textContent='Equipo registrado correctamente';$('#pollText').textContent=`Registro confirmado. Ejecución ${r.submission_count} de 3.`;msg('success','Registro confirmado',`El inventario fue impactado correctamente (${r.submission_count}/3).`)}
-}
+async function pollInventory(eid){try{const r=await getSubmissionStatus(eid);if(r?.exists){setPollVisual('success','Equipo registrado correctamente',`Registro confirmado. Ejecución ${r.submission_count} de 3.`)}}catch(e){console.warn(e)}}
 
 async function openAdmin(){switchView('#adminView');if(sb){const {data}=await sb.auth.getSession();if(data.session)await hydrateSession(data.session)}}
 async function login(ev){ev.preventDefault();const email=$('#adminEmail').value.trim(),password=$('#adminPassword').value;const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)return msg('error','No se pudo ingresar',error.message);await hydrateSession(data.session)}
@@ -151,9 +190,9 @@ const editSvg='<svg viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16v4z"/><pa
 const trashSvg='<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M7 6l1 14h8l1-14"/></svg>';
 function licenseStatus(r){const s=(r.windows_license_status||'Desconocido').toLowerCase();if(s.includes('no licenciado'))return ['bad','No licenciado'];if(s.includes('licenciado'))return ['ok','Licenciado'];return ['warn','Desconocido']}
 function renderInventory(){
- $('#inventoryBody').innerHTML=state.rows.map(r=>{const [lc,lt]=licenseStatus(r);const done=(r.submission_count||0)>=3;return `<tr>
+ $('#inventoryBody').innerHTML=state.rows.map(r=>{const [lc,lt]=licenseStatus(r);const [sc,st]=inventoryProcessStatus(r.submission_count);return `<tr>
  <td><input class="row-check" type="checkbox" data-id="${esc(r.id)}" ${state.selected.has(r.id)?'checked':''}></td>
- <td><span class="status ${done?'ok':'warn'}">${done?'Completo':'En proceso'}</span></td>
+ <td><span class="status ${sc}">${st}</span></td>
  <td>${esc(fmt(r.last_submitted_at))}</td><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc((r.brand||'')+' '+(r.model||''))}</td><td>${esc(r.processor||'—')}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type||'')}</td><td>${esc(r.operating_system||'—')}</td><td><span class="status ${lc}">${lt}</span></td><td>${esc(r.submission_count||0)}/3</td>
  <td><div class="action-group"><button class="action-btn view-row" data-id="${r.id}" title="Ver">${eyeSvg}</button><button class="action-btn edit-row" data-id="${r.id}" title="Editar">${editSvg}</button><button class="action-btn delete-row" data-id="${r.id}" title="Eliminar">${trashSvg}</button></div></td></tr>`}).join('')||'<tr><td colspan="12">Sin registros.</td></tr>';
  const pages=Math.max(1,Math.ceil(state.total/state.size));$('#pagerInfo').textContent=`Página ${state.page+1} de ${pages} · ${state.total} registros`;$('#prevPage').disabled=state.page===0;$('#nextPage').disabled=state.page+1>=pages;syncSelectionUI();
@@ -178,10 +217,23 @@ async function exportPDF(){try{const rows=await allInventory();const {jsPDF}=win
 async function invokeFn(name,body){
  const {data,error}=await sb.functions.invoke(name,{body});if(error){let detail=error.message;try{if(error.context){const j=await error.context.json();detail=j.error||j.message||detail}}catch{}throw new Error(detail)}return data;
 }
-async function loadAdmins(){if(!isSuper())return;try{const d=await invokeFn('medtuc-admins',{action:'list'});$('#adminsBody').innerHTML=(d.users||[]).map(u=>`<tr><td>${esc(u.display_name||'—')}</td><td>${esc(u.email||'—')}</td><td><span class="status ${u.role==='superadmin'?'ok':'warn'}">${esc(u.role)}</span></td><td>${esc(fmt(u.created_at))}</td></tr>`).join('')||'<tr><td colspan="4">Sin usuarios.</td></tr>'}catch(e){$('#adminsBody').innerHTML='<tr><td colspan="4">No se pudo cargar el listado.</td></tr>';msg('error','Administradores',e.message)}}
+async function loadAdmins(){
+ if(!isSuper())return;
+ try{const {data,error}=await sb.rpc('superadmin_list_admins');if(error)throw error;const users=data||[];$('#adminsBody').innerHTML=users.map(u=>`<tr><td>${esc(u.display_name||'—')}</td><td>${esc(u.email||'—')}</td><td><span class="status ${u.role==='superadmin'?'ok':'warn'}">${esc(u.role)}</span></td><td>${esc(fmt(u.created_at))}</td></tr>`).join('')||'<tr><td colspan="4">Sin usuarios.</td></tr>'}
+ catch(e){$('#adminsBody').innerHTML='<tr><td colspan="4">No se pudo cargar el listado.</td></tr>';msg('error','Administradores',e.message)}
+}
+async function createAdminFallback(v){
+ const isolated=window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'medtuc-admin-create-'+Date.now()}});
+ const {error:signErr}=await isolated.auth.signUp({email:v.email,password:v.password,options:{data:{display_name:v.display_name}}});
+ if(signErr&&!/already registered|already been registered|user already registered/i.test(signErr.message||''))throw signErr;
+ for(let i=0;i<10;i++){const {data,error}=await sb.rpc('superadmin_assign_role_by_email',{p_email:v.email,p_display_name:v.display_name,p_role:v.role});if(!error&&data?.ok)return data;if(error&&!/no existe|not found|no user/i.test(error.message||''))throw error;await sleep(500)}
+ throw new Error('La cuenta Auth no pudo vincularse al rol administrativo. Verificá que Authentication permita crear usuarios.');
+}
 async function addAdmin(){
- const {value:v}=await Swal.fire({...swal,title:'Nuevo usuario administrativo',html:`<input id="aName" class="swal2-input" placeholder="Nombre y apellido"><input id="aEmail" type="email" class="swal2-input" placeholder="Email"><input id="aPass" type="password" class="swal2-input" placeholder="Contraseña (mín. 8)"><select id="aRole" class="swal2-select"><option value="admin">Administrador</option><option value="superadmin">SuperAdmin</option></select>`,showCancelButton:true,confirmButtonText:'Crear usuario',cancelButtonText:'Cancelar',preConfirm:()=>({display_name:clean($('#aName').value),email:clean($('#aEmail').value).toLowerCase(),password:$('#aPass').value,role:$('#aRole').value})});
- if(!v)return;try{await invokeFn('medtuc-admins',{action:'create',...v});await loadAdmins();msg('success','Usuario creado',`Se creó como ${v.role}.`)}catch(e){msg('error','No se pudo crear',e.message)}
+ const {value:v}=await Swal.fire({...swal,title:'Nuevo usuario administrativo',html:`<input id="aName" class="swal2-input" placeholder="Nombre y apellido"><input id="aEmail" type="email" class="swal2-input" placeholder="Email"><input id="aPass" type="password" class="swal2-input" placeholder="Contraseña (mín. 8)"><select id="aRole" class="swal2-select"><option value="admin">Administrador</option><option value="superadmin">SuperAdmin</option></select>`,showCancelButton:true,confirmButtonText:'Crear usuario',cancelButtonText:'Cancelar',preConfirm:()=>{const x={display_name:clean($('#aName').value),email:clean($('#aEmail').value).toLowerCase(),password:$('#aPass').value,role:$('#aRole').value};if(!x.display_name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.email)||x.password.length<8){Swal.showValidationMessage('Completá nombre, email válido y contraseña de al menos 8 caracteres.');return false}return x}});
+ if(!v)return;Swal.fire({...swal,title:'Creando usuario...',allowOutsideClick:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()});
+ try{try{await invokeFn('medtuc-admins',{action:'create',...v})}catch(edgeError){console.warn('medtuc-admins no disponible; usando alternativa RPC.',edgeError);await createAdminFallback(v)}Swal.close();await loadAdmins();msg('success','Usuario creado',`Se creó ${v.email} como ${v.role==='superadmin'?'SuperAdmin':'Administrador'}.`)}
+ catch(e){Swal.close();msg('error','No se pudo crear',e.message)}
 }
 
 async function idbPut(file){return new Promise((res,rej)=>{const q=indexedDB.open('medtuc-updater',1);q.onupgradeneeded=()=>q.result.createObjectStore('patches');q.onerror=()=>rej(q.error);q.onsuccess=()=>{const tx=q.result.transaction('patches','readwrite');tx.objectStore('patches').put(file,'current');tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)}})}

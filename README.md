@@ -1,4 +1,4 @@
-# RELEVAMIENTO MANAGER v1.0.0
+# RELEVAMIENTO MANAGER v1.0.1
 
 PWA para relevamiento centralizado de PCs de la Dirección de Informática - Ministerio de Educación Tucumán.
 
@@ -35,7 +35,7 @@ Cada ZIP debe contener un `patch.json` en la raíz:
 
 ```json
 {
-  "from": ["1.0.0"],
+  "from": ["1.0.1"],
   "to": "1.0.1",
   "title": "Correcciones v1.0.1",
   "migrations": ["supabase/migrations/001_v1.0.1.sql"],

@@ -1,4 +1,4 @@
-# TUTORIAL DE INSTALACIÓN LIMPIA — v1.0.0
+# TUTORIAL DE INSTALACIÓN LIMPIA — v1.0.1
 
 Esta versión reemplaza la cadena de patches 0.3.x por una base limpia y consistente.
 
@@ -8,7 +8,7 @@ En Supabase → Authentication → Users debe existir:
 
 `fernando.m.gambino@gmail.com`
 
-Si no existe, crearlo con **Add user** y asignar contraseña. El SQL v1.0.0 lo promociona automáticamente a `superadmin`. También instala un trigger para conservar esta regla si el usuario se crea después.
+Si no existe, crearlo con **Add user** y asignar contraseña. El SQL v1.0.1 lo promociona automáticamente a `superadmin`. También instala un trigger para conservar esta regla si el usuario se crea después.
 
 ## 2. Instalar / reparar la base
 
@@ -16,7 +16,7 @@ Abrir Supabase → SQL Editor → New query.
 
 Copiar **todo** el contenido de:
 
-`supabase/INSTALL_OR_REPAIR_v1.0.0.sql`
+`supabase/INSTALL_OR_REPAIR_v1.0.1.sql`
 
 y ejecutar una sola vez.
 
@@ -109,7 +109,7 @@ Los archivos se almacenan en el bucket público `branding`; solo SuperAdmin pued
 
 ## 10. Futuras actualizaciones
 
-A partir de v1.0.0:
+A partir de v1.0.1:
 
 1. Adjuntar patch `.ZIP`.
 2. La PWA valida `patch.json`.

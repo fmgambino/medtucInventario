@@ -1,0 +1,16 @@
+{
+  "from": [
+    "1.0.1"
+  ],
+  "to": "1.0.2",
+  "title": "Corrección de estados y confirmación visual del relevamiento",
+  "migrations": [],
+  "files": [
+    "index.html",
+    "assets/js/app.js",
+    "assets/css/styles.css",
+    "sw.js",
+    "update_manifest.json",
+    "CAMBIOS_v1.0.2.txt"
+  ]
+}

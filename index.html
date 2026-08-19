@@ -8,7 +8,7 @@
   <title>RELEVAMIENTO MANAGER</title>
   <link id="appFavicon" rel="icon" href="assets/icons/favicon.svg">
   <link id="manifestLink" rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.0.2">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -23,7 +23,7 @@
       <span><strong id="brandTitle">RELEVAMIENTO MANAGER</strong><small>Dirección de Informática · Ministerio de Educación Tucumán</small></span>
     </span>
   </button>
-  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.0.0</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
+  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.0.2</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
 </header>
 
 <main class="shell">
@@ -111,7 +111,7 @@
           </article>
 
           <article class="card glass settings-pane" data-pane="updates">
-            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.0.0</b></div></div>
+            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.0.2</b></div></div>
             <div id="patchState" class="patch-state"><span class="dot warn"></span><div><b>Sin patch adjunto</b><small>Adjuntá un .ZIP compatible.</small></div></div>
             <input id="patchInput" type="file" accept=".zip,application/zip" hidden>
             <div class="update-actions"><button class="secondary" id="checkUpdatesBtn">Buscar actualizaciones</button><button class="secondary" id="attachPatchBtn">Adjuntar patch .ZIP</button><button class="primary" id="installPatchBtn" disabled>Instalar actualización</button></div>
@@ -127,5 +127,5 @@
 
 <footer class="footer">RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina<br>by <a href="https://github.com/fmgambino" target="_blank" rel="noopener">Ing. Fernando Gambino</a> · Todos los Derechos Registrados</footer>
 <script src="assets/js/config.js"></script>
-<script src="assets/js/app.js"></script>
+<script src="assets/js/app.js?v=1.0.2"></script>
 </body></html>

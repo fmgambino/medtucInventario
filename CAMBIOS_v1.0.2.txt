@@ -1,0 +1,15 @@
+RELEVAMIENTO MANAGER v1.0.2
+================================
+
+Correcciones:
+- El indicador giratorio solo se muestra mientras se espera una nueva carga.
+- Al confirmarse Supabase, el spinner cambia a un check verde fijo.
+- La tarjeta pública queda en estado final y ya no aparenta seguir esperando.
+- Estado de Inventario:
+    0/3 = Pendiente
+    1/3 = Registrado
+    2/3 = Actualizado
+    3/3 = Completo
+- Se elimina el estado ambiguo "En proceso".
+- Si el administrador está logueado, la tabla se refresca al confirmarse una nueva carga.
+- No requiere cambios SQL.
