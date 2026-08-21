@@ -1,6 +1,6 @@
 (() => {
 'use strict';
-const APP_VERSION='1.3.1';
+const APP_VERSION='1.4.0';
 const C=window.MEDTUC_CONFIG||{};
 const configured=Boolean(C.SUPABASE_URL&&C.SUPABASE_ANON_KEY);
 const sb=configured?window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY):null;
@@ -941,6 +941,219 @@ async function exportCSV(){
   downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`inventario_${exportSuffix()}_${Date.now()}.csv`);
  }catch(e){msg('error','No se pudo exportar CSV',e.message)}
 }
+
+const DGIDD_EXCEL_TEMPLATE='assets/templates/DGIDD_relevamiento_2026.xlsx';
+const DGIDD_SHEETS={
+ 'Inventario Actual':{file:'xl/worksheets/sheet1.xml',table:'xl/tables/table1.xml',headerRow:11,dataStart:12,lastTemplateRow:464,lastCol:'L',activeTab:0},
+ 'Inventario a solicitar':{file:'xl/worksheets/sheet3.xml',table:'xl/tables/table2.xml',headerRow:5,dataStart:6,lastTemplateRow:34,lastCol:'L',activeTab:2},
+ 'Equipos a Actualizar':{file:'xl/worksheets/sheet4.xml',table:'xl/tables/table3.xml',headerRow:5,dataStart:6,lastTemplateRow:100,lastCol:'M',activeTab:3}
+};
+function xmlDoc(text){
+ const d=new DOMParser().parseFromString(text,'application/xml');
+ const err=d.querySelector('parsererror');if(err)throw new Error('No se pudo procesar la plantilla Excel.');
+ return d;
+}
+function directChild(el,name){
+ return [...el.childNodes].find(n=>n.nodeType===1&&n.localName===name)||null;
+}
+function cellRefCol(ref){return String(ref||'').replace(/[0-9]/g,'')}
+function setXmlCell(cell,value){
+ [...cell.childNodes].forEach(n=>cell.removeChild(n));
+ cell.removeAttribute('t');
+ if(value===null||value===undefined||value==='')return;
+ const doc=cell.ownerDocument;
+ if(typeof value==='number'&&Number.isFinite(value)){
+   const v=doc.createElementNS(cell.namespaceURI,'v');v.textContent=String(value);cell.appendChild(v);return;
+ }
+ cell.setAttribute('t','inlineStr');
+ const is=doc.createElementNS(cell.namespaceURI,'is');
+ const t=doc.createElementNS(cell.namespaceURI,'t');
+ const s=String(value);
+ if(/^\s|\s$|\n/.test(s))t.setAttributeNS('http://www.w3.org/XML/1998/namespace','xml:space','preserve');
+ t.textContent=s;is.appendChild(t);cell.appendChild(is);
+}
+function ensureCell(row,col,rowNo,styleCell=null){
+ let cell=[...row.children].find(c=>c.localName==='c'&&cellRefCol(c.getAttribute('r'))===col);
+ if(cell)return cell;
+ const doc=row.ownerDocument;
+ cell=doc.createElementNS(row.namespaceURI,'c');
+ cell.setAttribute('r',`${col}${rowNo}`);
+ if(styleCell?.hasAttribute('s'))cell.setAttribute('s',styleCell.getAttribute('s'));
+ const colNum=(s)=>{let n=0;for(const ch of s)n=n*26+(ch.charCodeAt(0)-64);return n};
+ const target=colNum(col);
+ const next=[...row.children].find(c=>c.localName==='c'&&colNum(cellRefCol(c.getAttribute('r')))>target);
+ next?row.insertBefore(cell,next):row.appendChild(cell);
+ return cell;
+}
+function clearRowValues(row){
+ for(const c of [...row.children].filter(x=>x.localName==='c')){
+   [...c.childNodes].forEach(n=>c.removeChild(n));c.removeAttribute('t');
+ }
+}
+function cloneStyledRow(sheetData,sourceRow,rowNo){
+ const row=sourceRow.cloneNode(true);row.setAttribute('r',String(rowNo));
+ for(const c of [...row.children].filter(x=>x.localName==='c')){
+   const col=cellRefCol(c.getAttribute('r'));c.setAttribute('r',`${col}${rowNo}`);
+ }
+ clearRowValues(row);sheetData.appendChild(row);return row;
+}
+function ensureExportRows(doc,cfg,needed){
+ const sheetData=[...doc.documentElement.children].find(x=>x.localName==='sheetData');
+ if(!sheetData)throw new Error('Plantilla Excel inválida: falta sheetData.');
+ const rows=[...sheetData.children].filter(x=>x.localName==='row');
+ const byNo=new Map(rows.map(r=>[Number(r.getAttribute('r')),r]));
+ let styleSource=byNo.get(cfg.dataStart)||byNo.get(cfg.lastTemplateRow)||rows.at(-1);
+ const targetLast=Math.max(cfg.lastTemplateRow,cfg.dataStart+Math.max(needed,1)-1);
+ for(let r=cfg.dataStart;r<=targetLast;r++){
+   let row=byNo.get(r);
+   if(!row){row=cloneStyledRow(sheetData,styleSource,r);byNo.set(r,row)}
+   clearRowValues(row);
+ }
+ return {sheetData,byNo,targetLast};
+}
+function updateSheetBounds(doc,cfg,targetLast){
+ const dim=[...doc.documentElement.children].find(x=>x.localName==='dimension');
+ if(dim&&targetLast>cfg.lastTemplateRow)dim.setAttribute('ref',`A1:${cfg.lastCol}${targetLast}`);
+}
+function updateTableBounds(doc,cfg,targetLast){
+ const root=doc.documentElement;
+ const end=Math.max(cfg.lastTemplateRow,targetLast);
+ root.setAttribute('ref',`A${cfg.headerRow}:${cfg.lastCol}${end}`);
+ const auto=[...root.children].find(x=>x.localName==='autoFilter');
+ if(auto)auto.setAttribute('ref',`A${cfg.headerRow}:${cfg.lastCol}${end}`);
+}
+function splitStorageForTemplate(row){
+ const raw=String(row.storage||'').trim();
+ let m=raw.match(/(\d+(?:[.,]\d+)?)\s*(TB|GB|MB)\b/i);
+ if(m)return {capacity:Number(m[1].replace(',','.')),unit:m[2].toUpperCase()==='GB'?'Gb':m[2].toUpperCase()==='TB'?'TB':'MB'};
+ return {capacity:'',unit:''};
+}
+function collapseForDgiddTemplate(rows){
+ const groups=new Map(),out=[];
+ for(const r of rows){
+   if(r.source_item_no&&Number(r.source_quantity)>1){
+     const key=[r.source_sheet||'',r.office_name||'',r.source_item_no||'',r.source_row||''].join('|');
+     if(groups.has(key))continue;
+     groups.set(key,true);
+   }
+   out.push(r);
+ }
+ return out;
+}
+function dgiddRowValues(sheetName,row,itemNo){
+ const st=splitStorageForTemplate(row);
+ const qty=Math.max(1,Number(row.source_quantity)||1);
+ const type=row.equipment_type||(/^PC\b/i.test(row.equipment_name||'')?'PC':row.equipment_name||'PC');
+ const common={
+   item:Number(row.source_item_no)||itemNo,
+   type,brand:row.brand||'',qty,model:row.model||'',
+   year:Number(row.acquisition_year)||'',
+   processors:Number(row.processor_count)||1,
+   processor:row.processor||'',
+   cores:Number(row.cores)||'',
+   ram:Number(row.ram_gb)||'',
+   capacity:st.capacity,unit:st.unit
+ };
+ if(sheetName==='Inventario Actual')return [common.item,common.type,common.brand,common.qty,common.model,common.year,common.processors,common.processor,common.cores,common.ram,common.capacity,common.unit];
+ if(sheetName==='Inventario a solicitar')return [common.item,common.type,common.brand,common.qty,common.model,common.year,common.processors,common.cores,common.ram,common.capacity,common.unit,row.office_name||''];
+ return [common.item,common.type,common.brand,common.qty,common.model,common.year,common.processors,common.processor,common.cores,common.ram,common.capacity,common.unit,''];
+}
+function excelCol(n){let s='';while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s}
+async function populateDgiddSheet(zip,sheetName,rows){
+ const cfg=DGIDD_SHEETS[sheetName],entry=zip.file(cfg.file);if(!entry)throw new Error(`Falta ${cfg.file} en la plantilla.`);
+ const doc=xmlDoc(await entry.async('text'));
+ const cleanRows=collapseForDgiddTemplate(rows);
+ const {byNo,targetLast}=ensureExportRows(doc,cfg,cleanRows.length);
+ const styleRow=byNo.get(cfg.dataStart);
+ cleanRows.forEach((r,i)=>{
+   const rowNo=cfg.dataStart+i,row=byNo.get(rowNo);
+   const vals=dgiddRowValues(sheetName,r,i+1);
+   vals.forEach((v,c)=>{
+     const col=excelCol(c+1);
+     const styleCell=[...styleRow.children].find(x=>x.localName==='c'&&cellRefCol(x.getAttribute('r'))===col);
+     setXmlCell(ensureCell(row,col,rowNo,styleCell),v);
+   });
+ });
+ updateSheetBounds(doc,cfg,targetLast);
+ zip.file(cfg.file,new XMLSerializer().serializeToString(doc));
+
+ const tableEntry=zip.file(cfg.table);
+ if(tableEntry){
+   const tableDoc=xmlDoc(await tableEntry.async('text'));updateTableBounds(tableDoc,cfg,targetLast);
+   zip.file(cfg.table,new XMLSerializer().serializeToString(tableDoc));
+ }
+}
+async function setDgiddRepartition(zip,rows){
+ const entry=zip.file('xl/worksheets/sheet1.xml');if(!entry)return;
+ const doc=xmlDoc(await entry.async('text'));
+ const offices=[...new Set(rows.map(r=>String(r.office_name||'').trim()).filter(Boolean))];
+ if(!offices.length)return;
+ const sheetData=[...doc.documentElement.children].find(x=>x.localName==='sheetData');
+ const row3=[...sheetData.children].find(r=>r.localName==='row'&&r.getAttribute('r')==='3');
+ if(row3){
+   const c=ensureCell(row3,'C',3);setXmlCell(c,offices.length===1?offices[0]:'Varias oficinas / reparticiones');
+   zip.file('xl/worksheets/sheet1.xml',new XMLSerializer().serializeToString(doc));
+ }
+}
+async function setExcelActiveSheet(zip,sheetName){
+ const entry=zip.file('xl/workbook.xml');if(!entry)return;
+ const doc=xmlDoc(await entry.async('text'));
+ const view=doc.getElementsByTagNameNS('*','workbookView')[0];
+ if(view)view.setAttribute('activeTab',String(DGIDD_SHEETS[sheetName]?.activeTab??0));
+ zip.file('xl/workbook.xml',new XMLSerializer().serializeToString(doc));
+}
+function rowsByExcelSheet(rows){
+ const out={'Inventario Actual':[],'Inventario a solicitar':[],'Equipos a Actualizar':[]};
+ for(const r of rows){
+   const s=r.source_sheet;
+   if(s==='Inventario a solicitar')out[s].push(r);
+   else if(s==='Equipos a Actualizar')out[s].push(r);
+   else out['Inventario Actual'].push(r);
+ }
+ return out;
+}
+async function exportExcelTemplate(){
+ try{
+   if(!window.JSZip)throw new Error('No se cargó el motor ZIP necesario para Excel.');
+   Swal.fire({...swal,title:'Generando Excel...',html:'Aplicando los datos sobre la plantilla oficial DGIDD sin modificar su diseño.',allowOutsideClick:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()});
+
+   const all=exportAllSheets()||state.sourceView==='all';
+   const rows=await allInventory({ignoreSource:all});
+   const res=await fetch(DGIDD_EXCEL_TEMPLATE,{cache:'no-store'});
+   if(!res.ok)throw new Error(`No se pudo cargar la plantilla Excel (${res.status}).`);
+   const zip=await JSZip.loadAsync(await res.arrayBuffer());
+   const bySheet=rowsByExcelSheet(rows);
+
+   let active='Inventario Actual';
+   if(!all&&state.sourceView==='Inventario a solicitar')active='Inventario a solicitar';
+   if(!all&&state.sourceView==='Equipos a Actualizar')active='Equipos a Actualizar';
+
+   // Siempre limpiamos las 3 hojas del template para no exportar datos de ejemplo.
+   for(const sheetName of Object.keys(DGIDD_SHEETS)){
+     const sheetRows=all?bySheet[sheetName]:(sheetName===active?bySheet[sheetName]:[]);
+     await populateDgiddSheet(zip,sheetName,sheetRows);
+   }
+   await setDgiddRepartition(zip,rows);
+   await setExcelActiveSheet(zip,active);
+
+   const blob=await zip.generateAsync({
+     type:'blob',
+     mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+     compression:'DEFLATE',
+     compressionOptions:{level:6}
+   });
+   Swal.close();
+   downloadBlob(blob,`DGIDD_RELEVAMIENTO_2026_${exportSuffix()}_${new Date().toISOString().slice(0,10)}.xlsx`);
+ }catch(e){
+   Swal.close();console.error('Excel template export',e);
+   msg('error','No se pudo generar Excel',e.message);
+ }
+}
+async function exportSelectedFormat(){
+ const format=$('#exportFormat')?.value||'csv';
+ if(format==='xlsx')return exportExcelTemplate();
+ return exportCSV();
+}
 async function exportPDF(){
  try{
   const rows=await allInventory({ignoreSource:exportAllSheets()});
@@ -1068,7 +1281,7 @@ function bind(){
  $('#sourceSheetTabs')?.addEventListener('click',e=>{const b=e.target.closest('.source-sheet-tab');if(b)changeSourceView(b.dataset.sourceSheet)});
  change('#exportScope',e=>{state.exportScope=e.target.value||'current'});
  change('#importMode',()=>{if(state.importSheet)renderImportCandidate(state.importSheet)});
- click('#exportCsvBtn',exportCSV);
+ click('#exportBtn',exportSelectedFormat);
  click('#exportPdfBtn',exportPDF);
  click('#addAdminBtn',addAdmin);
  click('#saveBrandingBtn',saveBranding);
