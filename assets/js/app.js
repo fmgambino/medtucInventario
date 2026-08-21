@@ -1,11 +1,11 @@
 (() => {
 'use strict';
-const APP_VERSION='1.2.3';
+const APP_VERSION='1.3.1';
 const C=window.MEDTUC_CONFIG||{};
 const configured=Boolean(C.SUPABASE_URL&&C.SUPABASE_ANON_KEY);
 const sb=configured?window.supabase.createClient(C.SUPABASE_URL.replace(/\/$/,''),C.SUPABASE_ANON_KEY):null;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorToken:null,filters:{office:'',status:'',license:'',ram:'',tag:'',group:''},tags:[],importRows:[],importMap:{}};
+const state={page:0,size:10,filter:'',rows:[],total:0,user:null,role:null,selected:new Set(),poll:null,patch:null,settings:null,manifestObjectUrl:null,collectorToken:null,filters:{office:'',status:'',license:'',ram:'',tag:'',group:''},tags:[],importRows:[],importMap:{},importWorkbook:null,importCandidates:[],importSheet:null,importMeta:{},sourceView:'all',sourceSheets:[],sourceCounts:{},exportScope:'current'};
 const swal={background:'#101827',color:'#edf4ff',confirmButtonColor:'#6ca8ff',cancelButtonColor:'#65758a'};
 const msg=(icon,title,text='')=>Swal.fire({...swal,icon,title,text,confirmButtonText:'Aceptar'});
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -194,10 +194,10 @@ async function hydrateSession(session){
  const {data,error}=await sb.from('admin_users').select('role,display_name').eq('user_id',state.user.id).maybeSingle();
  if(error||!data){await sb.auth.signOut();return msg('error','Acceso denegado','Este usuario no tiene permisos administrativos.')}
  state.role=data.role;$('#loginCard').classList.add('hidden');$('#adminPanel').classList.remove('hidden');$('#logoutBtn').classList.remove('hidden');$('#roleChip').textContent=isSuper()?'SuperAdmin':'Administrador';
- $$('.super-only').forEach(x=>x.classList.toggle('hidden',!isSuper()));await loadTags();await loadRamOptions();await loadInventory();if(isSuper()){await loadAdmins();await loadSettings();await loadHistory();await loadOfficesAdmin()}
+ $$('.super-only').forEach(x=>x.classList.toggle('hidden',!isSuper()));await loadTags();await loadRamOptions();await loadSourceSheets();await loadInventory();if(isSuper()){await loadAdmins();await loadSettings();await loadHistory();await loadOfficesAdmin()}
 }
 async function logout(){await sb.auth.signOut();state.user=null;state.role=null;$('#adminPanel').classList.add('hidden');$('#loginCard').classList.remove('hidden');$('#logoutBtn').classList.add('hidden')}
-function switchTab(name){$$('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.admin-section').forEach(s=>s.classList.toggle('active',s.dataset.section===name));if(name==='admins')loadAdmins();if(name==='settings'){loadSettings();loadHistory()}}
+function switchTab(name){$$('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.admin-section').forEach(s=>s.classList.toggle('active',s.dataset.section===name));if(name==='inventory'){loadSourceSheets();loadInventory()}if(name==='admins')loadAdmins();if(name==='settings'){loadSettings();loadHistory()}}
 function switchSetting(name){$$('.settings-item').forEach(b=>b.classList.toggle('active',b.dataset.setting===name));$$('.settings-pane').forEach(p=>p.classList.toggle('active',p.dataset.pane===name));if(name==='offices')loadOfficesAdmin()}
 
 
@@ -231,10 +231,47 @@ function applyInventoryFilters(q,ids){
  if(txt){const s=txt.replace(/[%(),]/g,' ');q=q.or(`office_name.ilike.%${s}%,equipment_name.ilike.%${s}%,brand.ilike.%${s}%,model.ilike.%${s}%,processor.ilike.%${s}%,operating_system.ilike.%${s}%,hostname.ilike.%${s}%`)}
  return q;
 }
-async function fetchFilteredInventory(paged=true){
+
+function sourceDisplayName(v){return v||'Relevamiento automático'}
+function sourceSlug(v){return String(v||'automatico').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'inventario'}
+function applySourceFilter(q,override){
+ const s=override===undefined?state.sourceView:override;
+ if(!s||s==='all')return q;
+ return s==='__automatic__'?q.is('source_sheet',null):q.eq('source_sheet',s);
+}
+async function loadSourceSheets(){
+ if(!state.user)return;
+ const {data,error}=await sb.from('inventories').select('source_sheet');
+ if(error){console.warn('source sheets',error);return}
+ const counts={all:(data||[]).length,__automatic__:0};
+ (data||[]).forEach(r=>{const k=r.source_sheet||'__automatic__';counts[k]=(counts[k]||0)+1});
+ const preferred=['Inventario Actual','Inventario a solicitar','Equipos a Actualizar'];
+ const found=Object.keys(counts).filter(k=>!['all','__automatic__'].includes(k));
+ state.sourceSheets=[...preferred.filter(s=>found.includes(s)),...found.filter(s=>!preferred.includes(s)).sort((a,b)=>a.localeCompare(b,'es'))];
+ state.sourceCounts=counts;
+ renderSourceTabs();
+}
+function renderSourceTabs(){
+ const el=$('#sourceSheetTabs');if(!el)return;
+ const items=[
+  {key:'all',label:'Todos',count:state.sourceCounts.all||0},
+  ...state.sourceSheets.map(s=>({key:s,label:s,count:state.sourceCounts[s]||0})),
+  ...(state.sourceCounts.__automatic__?[{key:'__automatic__',label:'Relevamiento automático',count:state.sourceCounts.__automatic__}]:[])
+ ];
+ if(!items.some(x=>x.key===state.sourceView))state.sourceView='all';
+ el.innerHTML=items.map(x=>`<button type="button" class="source-sheet-tab ${x.key===state.sourceView?'active':''}" data-source-sheet="${esc(x.key)}"><span>${esc(x.label)}</span><b>${x.count}</b></button>`).join('');
+ const cur=items.find(x=>x.key===state.sourceView);
+ if($('#sourceSheetSummary'))$('#sourceSheetSummary').textContent=cur?`${cur.label} · ${cur.count} equipo${cur.count===1?'':'s'}`:'Todos los registros';
+}
+async function changeSourceView(v){
+ state.sourceView=v||'all';state.page=0;state.selected.clear();renderSourceTabs();await loadInventory();
+}
+
+async function fetchFilteredInventory(paged=true,sourceOverride=undefined){
  const tagIds=await resolveTagInventoryIds(state.filters.tag);
  let q=sb.from('inventories').select('*,inventory_tags(tag_id,tags(id,name,color))',{count:paged?'exact':undefined}).order('last_submitted_at',{ascending:false});
  q=applyInventoryFilters(q,tagIds);
+ q=applySourceFilter(q,sourceOverride);
  if(paged)q=q.range(state.page*state.size,state.page*state.size+state.size-1);
  return await q;
 }
@@ -359,67 +396,314 @@ async function editOffice(id){
  await loadCatalogs();await loadOfficesAdmin();if(state.user)await loadInventory();msg('success','Oficina actualizada',data?.name||clean(name));
 }
 
+
 const importAliases={
  date:['fecha','date','createdat','fechahora'],
- office_name:['oficina','office','dependencia','sector'],
+ office_name:['oficina','office','dependencia','sector','reparticion','repartición'],
+ equipment_name:['nombreequipo','nombre_equipo','equipo','hostname','nombredel equipo'],
+ equipment_type:['tipo2','tipo','tipodeequipo','tipoequipo'],
+ source_item_no:['itemn','itemno','itemnumero','itemnro','item'],
+ source_quantity:['cantidad','cant','unidades'],
  brand:['marca','brand','fabricante'],
- equipment_name:['nombreequipo','nombre_equipo','equipo','pc','hostname'],
- processor:['procesador','processor','cpu'],
- cores:['nucleos','núcleos','cores','nucleosfisicos'],
+ model:['modelo','model'],
+ acquisition_year:['ano','año','anio','anodeadquisicion','añodeadquisicion'],
+ processor_count:['cantdeprocesadores','cantidaddeprocesadores','procesadoresfisicos','cantprocesadores'],
+ processor:['modelodeprocesador','procesador','processor','cpu'],
+ cores:['cantdecoresdecprocesador','cantdecoresporprocesador','cores','nucleos','núcleos'],
+ ram_gb:['ramgb','ram_gb','ram','memoria'],
+ storage_capacity:['capacidadtb','capacidad','storagecapacity'],
+ storage_unit:['unidadmedida','unidad','unit'],
  operating_system:['sistemaoperativo','sistema_operativo','so','windows','os'],
  motherboard:['placamadre','placa_madre','motherboard','mainboard'],
- ram_gb:['ramgb','ram_gb','ram','memoria'],
  ram_type:['ramtipo','ram_tipo','tiporam','tipo_ram'],
  storage:['almacenamiento','storage','disco','discos'],
- graphics:['tarjetagrafica','tarjeta_grafica','gpu','grafica','gráfica'],
- model:['modelo','model']
+ graphics:['tarjetagrafica','tarjeta_grafica','gpu','grafica','gráfica']
 };
 function normHeader(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'')}
 function detectImportMap(headers){
- const normalized=Object.fromEntries(headers.map(h=>[normHeader(h),h])),map={};
- for(const [field,aliases] of Object.entries(importAliases)){for(const a of aliases){const hit=normalized[normHeader(a)];if(hit){map[field]=hit;break}}}
+ const normalized=Object.fromEntries(headers.map(h=>[normHeader(h),h]).filter(([n])=>n)),map={};
+ for(const [field,aliases] of Object.entries(importAliases)){
+   for(const a of aliases){const hit=normalized[normHeader(a)];if(hit!==undefined){map[field]=hit;break}}
+ }
  return map;
 }
-function normalizeImportRow(row,map){
- const get=f=>row[map[f]]??'';
+function scoreHeaderRow(row){
+ const headers=(row||[]).map(v=>String(v??'').trim()).filter(Boolean);
+ if(headers.length<2)return {score:0,map:{}};
+ const map=detectImportMap(headers);
+ let score=Object.keys(map).length;
+ if(map.source_item_no)score+=2;
+ if(map.equipment_type)score+=2;
+ if(map.brand)score++;
+ if(map.processor)score++;
+ if(map.ram_gb)score++;
+ return {score,map,headers};
+}
+function findHeaderRow(matrix){
+ let best={rowIndex:-1,score:0,map:{},headers:[]};
+ const max=Math.min(matrix.length,45);
+ for(let i=0;i<max;i++){
+   const s=scoreHeaderRow(matrix[i]);
+   if(s.score>best.score)best={rowIndex:i,...s};
+ }
+ return best;
+}
+function findMetadataValue(matrix,aliases){
+ const norms=aliases.map(normHeader);
+ for(let r=0;r<Math.min(matrix.length,35);r++){
+   const row=matrix[r]||[];
+   for(let c=0;c<row.length;c++){
+     const key=normHeader(row[c]);
+     if(!key)continue;
+     if(norms.some(a=>key===a||key.startsWith(a))){
+       for(let j=c+1;j<row.length;j++){
+         const value=String(row[j]??'').trim();
+         if(value)return value;
+       }
+       for(let rr=r+1;rr<Math.min(matrix.length,r+4);rr++){
+         const value=String((matrix[rr]||[])[c]??'').trim();
+         if(value)return value;
+       }
+     }
+   }
+ }
+ return '';
+}
+function inspectImportSheet(wb,sheetName){
+ const ws=wb.Sheets[sheetName];
+ const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,blankrows:false});
+ const header=findHeaderRow(matrix);
+ const officeMeta=findMetadataValue(matrix,['Nombre de la Repartición','Repartición','Dependencia','Oficina']);
+ const techMeta=findMetadataValue(matrix,['Nombre del Ref. Técnico','Responsable Técnico','Referente Técnico']);
+ const phoneMeta=findMetadataValue(matrix,['Tel de contacto','Teléfono de contacto']);
+ const emailMeta=findMetadataValue(matrix,['Mail de contacto','Email de contacto','Correo de contacto']);
+ return {sheetName,matrix,header,meta:{office_name:officeMeta,technical_contact:techMeta,phone:phoneMeta,email:emailMeta}};
+}
+function candidatePriority(c){
+ const n=normHeader(c.sheetName);
+ let p=c.header.score;
+ if(n==='inventarioactual'||n.includes('inventarioactual'))p+=20;
+ if(n.includes('config'))p-=30;
+ if(n.includes('solicitar'))p-=5;
+ return p;
+}
+function buildSheetCandidates(wb){
+ return wb.SheetNames.map(n=>inspectImportSheet(wb,n))
+   .filter(c=>c.header.rowIndex>=0&&c.header.score>=4)
+   .sort((a,b)=>candidatePriority(b)-candidatePriority(a));
+}
+function sheetRowsAsObjects(candidate){
+ const {matrix,header}=candidate;
+ const headers=(matrix[header.rowIndex]||[]).map(v=>String(v??'').trim());
+ const rows=[];
+ for(let r=header.rowIndex+1;r<matrix.length;r++){
+   const arr=matrix[r]||[];
+   if(!arr.some(v=>String(v??'').trim()!==''))continue;
+   const obj={__rowNumber:r+1};
+   headers.forEach((h,i)=>{if(h)obj[h]=arr[i]??''});
+   rows.push(obj);
+ }
+ return {headers,rows,map:detectImportMap(headers)};
+}
+function parseNumber(v){
+ const s=String(v??'').trim().replace(',','.').replace(/[^\d.-]/g,'');
+ const n=Number(s);return Number.isFinite(n)?n:null;
+}
+function intNumber(v){
+ const n=parseNumber(v);return Number.isFinite(n)?Math.trunc(n):null;
+}
+function normalizedStorage(capacity,unit,storage){
+ const direct=clean(storage);
+ if(direct)return direct;
+ const n=parseNumber(capacity);
+ if(n===null)return '';
+ let u=String(unit??'').trim().toUpperCase();
+ if(/^G/.test(u))u='GB'; else if(/^T/.test(u))u='TB'; else if(/^M/.test(u))u='MB';
+ return `${n} ${u||''}`.trim();
+}
+function compactEquipmentName(type,item,unitIndex,qty,brand,model){
+ const t=clean(type)||'Equipo';
+ const itemTxt=String(item??'').trim();
+ let base=itemTxt?`${t} #${itemTxt}`:t;
+ if(Number(qty)>1)base+=`-${String(unitIndex).padStart(2,'0')}`;
+ // El nombre de catálogo debe caber en 80 caracteres.
+ return base.slice(0,80);
+}
+function normalizeImportRow(row,map,context={}){
+ const get=f=>map[f]!==undefined?(row[map[f]]??''):'';
  const n=v=>clean(v);
- const cores=parseInt(String(get('cores')).replace(/[^\d-]/g,''),10);
- const ram=parseInt(String(get('ram_gb')).replace(/[^\d-]/g,''),10);
+ const cores=intNumber(get('cores'));
+ const ram=parseNumber(get('ram_gb'));
+ const qty=Math.max(1,Math.min(500,intNumber(get('source_quantity'))||1));
+ const processorCount=intNumber(get('processor_count'));
+ const year=intNumber(get('acquisition_year'));
  let dt=n(get('date')); if(dt){const d=new Date(dt.replace(' ','T'));if(!isNaN(d))dt=d.toISOString()}
- return {office_name:n(get('office_name')),equipment_name:n(get('equipment_name')),brand:n(get('brand')),model:n(get('model')),processor:n(get('processor')),cores:Number.isFinite(cores)?cores:null,operating_system:n(get('operating_system')),motherboard:n(get('motherboard')),ram_gb:Number.isFinite(ram)?ram:null,ram_type:n(get('ram_type')),storage:n(get('storage')),graphics:n(get('graphics')),source_date:dt||null,collector_version:'IMPORT-v1.1.0'};
+ return {
+   office_name:n(get('office_name'))||n(context.office_name),
+   explicit_equipment_name:n(get('equipment_name')),
+   equipment_type:n(get('equipment_type')),
+   source_item_no:n(get('source_item_no'))||String(row.__rowNumber||''),
+   source_quantity:qty,
+   brand:n(get('brand')),
+   model:n(get('model')),
+   acquisition_year:year,
+   processor_count:processorCount,
+   processor:n(get('processor')),
+   cores:Number.isFinite(cores)?cores:null,
+   operating_system:n(get('operating_system')),
+   motherboard:n(get('motherboard')),
+   ram_gb:Number.isFinite(ram)?ram:null,
+   ram_type:n(get('ram_type')),
+   storage:normalizedStorage(get('storage_capacity'),get('storage_unit'),get('storage')),
+   graphics:n(get('graphics')),
+   source_date:dt||null,
+   source_sheet:n(context.sheetName),
+   source_row:Number(row.__rowNumber||0)||null,
+   collector_version:'IMPORT-v1.3.0'
+ };
+}
+function expandImportUnits(base){
+ const out=[];
+ for(let unit=1;unit<=base.source_quantity;unit++){
+   const name=base.explicit_equipment_name
+     ? (base.source_quantity>1?`${base.explicit_equipment_name}-${String(unit).padStart(2,'0')}`:base.explicit_equipment_name).slice(0,80)
+     : compactEquipmentName(base.equipment_type,base.source_item_no,unit,base.source_quantity,base.brand,base.model);
+   out.push({...base,equipment_name:name,source_unit_no:unit});
+ }
+ return out;
+}
+function renderImportCandidate(candidate){
+ const parsed=sheetRowsAsObjects(candidate);
+ const map=parsed.map;
+ state.importSheet=candidate;
+ state.importRows=parsed.rows;
+ state.importMap=map;
+ state.importMeta=candidate.meta||{};
+
+ const officeInput=$('#importOfficeFallback');
+ if(officeInput&&!officeInput.value)officeInput.value=candidate.meta?.office_name||'';
+
+ $('#importDetectedPanel')?.classList.remove('hidden');
+ const meta=[];
+ meta.push(`<span><b>Encabezados:</b> fila ${candidate.header.rowIndex+1}</span>`);
+ if(candidate.meta?.office_name)meta.push(`<span><b>Repartición:</b> ${esc(candidate.meta.office_name)}</span>`);
+ if(candidate.meta?.technical_contact)meta.push(`<span><b>Ref. técnico:</b> ${esc(candidate.meta.technical_contact)}</span>`);
+ $('#importMetaInfo').innerHTML=meta.join('');
+
+ $('#importMapping').classList.remove('hidden');
+ $('#importMapping').innerHTML=Object.entries(map).map(([f,h])=>`<div class="mapping-item"><b>${esc(f)}</b><span>${esc(h)}</span></div>`).join('');
+
+ const fallback=clean(officeInput?.value||candidate.meta?.office_name||'');
+ const normalized=parsed.rows.flatMap(r=>expandImportUnits(normalizeImportRow(r,map,{office_name:fallback,sheetName:candidate.sheetName})));
+ const sample=normalized.slice(0,8);
+
+ $('#importPreview').classList.remove('hidden');
+ $('#importPreview').innerHTML=`
+   <div class="import-preview-head">
+     <b>${sample.length?'Vista previa':'Sin filas válidas'}</b>
+     <span>${parsed.rows.length} fila(s) origen → ${normalized.length} equipo(s) individuales</span>
+   </div>
+   <table>
+     <thead><tr><th>Oficina</th><th>Equipo generado</th><th>Tipo</th><th>Marca/Modelo</th><th>CPU</th><th>RAM</th><th>Almacenamiento</th></tr></thead>
+     <tbody>${sample.map(r=>`<tr>
+       <td>${esc(r.office_name||'—')}</td>
+       <td>${esc(r.equipment_name)}</td>
+       <td>${esc(r.equipment_type||'—')}</td>
+       <td>${esc(`${r.brand||''} ${r.model||''}`.trim()||'—')}</td>
+       <td>${esc(r.processor||'—')}</td>
+       <td>${esc(r.ram_gb??'—')} GB</td>
+       <td>${esc(r.storage||'—')}</td>
+     </tr>`).join('')}</tbody>
+   </table>`;
+
+ const hasOffice=Boolean(fallback||map.office_name);
+ const hasEquipment=Boolean(map.equipment_name||map.equipment_type||map.source_item_no);
+ $('#runImportBtn').disabled=!(hasOffice&&hasEquipment&&normalized.length);
+ $('#importStatus').textContent=`Hoja "${candidate.sheetName}" · ${parsed.rows.length} fila(s) detectadas · ${normalized.length} equipo(s) a procesar.`;
 }
 async function parseImportFile(file){
  if(!window.XLSX)throw new Error('No se cargó el motor XLSX. Verificá la conexión a Internet.');
  const ext=(file.name.split('.').pop()||'').toLowerCase();let wb;
- if(ext==='csv'){const text=await file.text();wb=XLSX.read(text,{type:'string'})}else{const ab=await file.arrayBuffer();wb=XLSX.read(ab,{type:'array',cellDates:true})}
- const ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});
- if(!rows.length)throw new Error('La planilla no contiene filas de datos.');
- const headers=Object.keys(rows[0]),map=detectImportMap(headers);
- if(!map.office_name||!map.equipment_name)throw new Error('No pude detectar las columnas Oficina y NombreEquipo/Equipo.');
- state.importRows=rows;state.importMap=map;
- $('#importMapping').classList.remove('hidden');
- $('#importMapping').innerHTML=Object.entries(map).map(([f,h])=>`<div class="mapping-item"><b>${esc(f)}</b><span>${esc(h)}</span></div>`).join('');
- const sample=rows.slice(0,5).map(r=>normalizeImportRow(r,map));
- $('#importPreview').classList.remove('hidden');
- $('#importPreview').innerHTML=`<table><thead><tr><th>Oficina</th><th>Equipo</th><th>Marca</th><th>CPU</th><th>RAM</th><th>Windows</th></tr></thead><tbody>${sample.map(r=>`<tr><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc(r.brand)}</td><td>${esc(r.processor)}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type)}</td><td>${esc(r.operating_system)}</td></tr>`).join('')}</tbody></table></div>`;
- $('#runImportBtn').disabled=false;$('#importStatus').textContent=`${rows.length} fila(s) detectadas · ${Object.keys(map).length} columnas mapeadas.`;
-}
-async function runImport(){
- if(!state.importRows.length)return;
- const rows=state.importRows.map(r=>normalizeImportRow(r,state.importMap)).filter(r=>r.office_name&&r.equipment_name);
- const ask=await Swal.fire({...swal,icon:'question',title:'Importar inventario',html:`Se procesarán <b>${rows.length}</b> filas. Se crearán oficinas/equipos faltantes y se evitarán duplicados.`,showCancelButton:true,confirmButtonText:'Importar',cancelButtonText:'Cancelar'});if(!ask.isConfirmed)return;
- Swal.fire({...swal,title:'Importando datos...',html:`<div class="import-progress"><i id="importProgressBar"></i></div><div id="importProgressText">0 / ${rows.length}</div>`,allowOutsideClick:false,showConfirmButton:false});
- let inserted=0,updated=0,errors=[];
- for(let i=0;i<rows.length;i++){
-  try{const {data,error}=await sb.rpc('superadmin_import_inventory_row',{p_payload:rows[i]});if(error)throw error;const action=data?.action||'';if(action==='inserted')inserted++;else updated++}
-  catch(e){errors.push({row:i+2,error:e.message})}
-  const pct=Math.round(((i+1)/rows.length)*100),bar=document.getElementById('importProgressBar'),txt=document.getElementById('importProgressText');if(bar)bar.style.width=pct+'%';if(txt)txt.textContent=`${i+1} / ${rows.length}`;
+ if(ext==='csv'){
+   const text=await file.text();
+   wb=XLSX.read(text,{type:'string'});
+ }else{
+   const ab=await file.arrayBuffer();
+   wb=XLSX.read(ab,{type:'array',cellDates:true});
  }
- Swal.close();await loadCatalogs();await loadInventory();await loadOfficesAdmin();
- const detail=`Nuevos: ${inserted} · Actualizados/duplicados: ${updated} · Errores: ${errors.length}`;
+
+ const candidates=buildSheetCandidates(wb);
+ if(!candidates.length)throw new Error('No pude localizar una tabla de inventario. El archivo no contiene encabezados reconocibles.');
+
+ state.importWorkbook=wb;
+ state.importCandidates=candidates;
+
+ const sel=$('#importSheetSelect');
+ if(sel){
+   sel.innerHTML=candidates.map((c,i)=>`<option value="${i}">${esc(c.sheetName)} · encabezados fila ${c.header.rowIndex+1}</option>`).join('');
+   sel.value='0';
+ }
+ $('#importOfficeFallback').value=candidates[0].meta?.office_name||'';
+ renderImportCandidate(candidates[0]);
+}
+function expandedRowsForCandidate(c,officeFallback=''){
+ const parsed=sheetRowsAsObjects(c),fallback=clean(c.meta?.office_name||officeFallback||'');
+ return parsed.rows.map(r=>normalizeImportRow(r,parsed.map,{office_name:fallback,sheetName:c.sheetName}))
+  .filter(r=>r.office_name&&(r.explicit_equipment_name||r.equipment_type||r.source_item_no)).flatMap(expandImportUnits);
+}
+function currentExpandedImportRows(){
+ const office=clean($('#importOfficeFallback')?.value||state.importMeta?.office_name||'');
+ if(($('#importMode')?.value||'all')==='all')return (state.importCandidates||[]).flatMap(c=>expandedRowsForCandidate(c,office));
+ return state.importSheet?expandedRowsForCandidate(state.importSheet,office):[];
+}
+
+async function runImport(){
+ const rows=currentExpandedImportRows();
+ if(!rows.length)return msg('warning','Sin datos para importar','Revisá la hoja seleccionada y la Oficina/Repartición.');
+
+ const offices=new Set(rows.map(r=>r.office_name)),bySheet={};
+ rows.forEach(r=>bySheet[r.source_sheet]=(bySheet[r.source_sheet]||0)+1);
+ const sheetSummary=Object.entries(bySheet).map(([k,v])=>`${esc(k)}: <b>${v}</b>`).join(' · ');
+ const ask=await Swal.fire({
+   ...swal,icon:'question',title:'Importar inventario',
+   html:`Se procesarán <b>${rows.length}</b> equipos individuales.<br>${sheetSummary}<br>
+         Reparticiones: <b>${offices.size}</b>.<br><br>
+         <small>Las hojas operativas quedarán separadas en pestañas dentro del Inventario. La hoja config se ignora automáticamente.</small>`,
+   showCancelButton:true,confirmButtonText:'Importar',cancelButtonText:'Cancelar'
+ });
+ if(!ask.isConfirmed)return;
+
+ Swal.fire({...swal,title:'Importando datos...',html:`<div class="import-progress"><i id="importProgressBar"></i></div><div id="importProgressText">0 / ${rows.length}</div>`,allowOutsideClick:false,showConfirmButton:false});
+
+ let inserted=0,updated=0,duplicates=0,errors=[];
+ for(let i=0;i<rows.length;i++){
+   try{
+     const {data,error}=await sb.rpc('superadmin_import_inventory_row',{p_payload:rows[i]});
+     if(error)throw error;
+     const action=data?.action||'';
+     if(action==='inserted')inserted++;
+     else if(action==='duplicate')duplicates++;
+     else updated++;
+   }catch(e){
+     errors.push({row:rows[i].source_row||i+1,error:e.message});
+   }
+   const pct=Math.round(((i+1)/rows.length)*100);
+   const bar=document.getElementById('importProgressBar'),txt=document.getElementById('importProgressText');
+   if(bar)bar.style.width=pct+'%';
+   if(txt)txt.textContent=`${i+1} / ${rows.length}`;
+ }
+ Swal.close();
+ await loadCatalogs();await loadSourceSheets();await loadInventory();await loadOfficesAdmin();
+
+ const detail=`Nuevos: ${inserted} · Actualizados: ${updated} · Duplicados: ${duplicates} · Errores: ${errors.length}`;
  $('#importStatus').textContent=detail;
- if(errors.length)await Swal.fire({...swal,icon:'warning',title:'Importación finalizada con observaciones',html:`${esc(detail)}<br><small>${esc(errors.slice(0,5).map(x=>`Fila ${x.row}: ${x.error}`).join(' | '))}</small>`,confirmButtonText:'Aceptar'});
- else await msg('success','Importación completada',detail);
+ if(errors.length){
+   await Swal.fire({...swal,icon:'warning',title:'Importación finalizada con observaciones',
+     html:`${esc(detail)}<br><small>${esc(errors.slice(0,8).map(x=>`Fila ${x.row}: ${x.error}`).join(' | '))}</small>`,
+     confirmButtonText:'Aceptar'});
+ }else{
+   await msg('success','Importación completada',detail);
+ }
 }
 
 async function loadInventory(){
@@ -433,7 +717,9 @@ async function loadInventory(){
  }catch(e){msg('error','No se pudo cargar inventario',e.message)}
 }
 async function loadStats(){
- const {data}=await sb.from('inventories').select('windows_license_status,submission_count');
+ let q=sb.from('inventories').select('windows_license_status,submission_count,source_sheet');
+ q=applySourceFilter(q);
+ const {data}=await q;
  const rows=data||[];
  $('#statTotal').textContent=rows.length;
  $('#statLicensed').textContent=rows.filter(r=>/licenciado/i.test(r.windows_license_status||'')&&!/no licenciado/i.test(r.windows_license_status||'')).length;
@@ -448,8 +734,9 @@ function renderInventory(){
  $('#inventoryBody').innerHTML=state.rows.map(r=>{const [lc,lt]=licenseStatus(r);const [sc,st]=inventoryProcessStatus(r.submission_count);return `<tr>
  <td><input class="row-check" type="checkbox" data-id="${esc(r.id)}" ${state.selected.has(r.id)?'checked':''}></td>
  <td><span class="status ${sc}">${st}</span></td>
+ <td><span class="source-badge">${esc(sourceDisplayName(r.source_sheet))}</span></td>
  <td>${esc(fmt(r.last_submitted_at))}</td><td>${esc(r.office_name)}</td><td>${esc(r.equipment_name)}</td><td>${esc((r.brand||'')+' '+(r.model||''))}</td><td>${esc(r.processor||'—')}</td><td>${esc(r.ram_gb||'—')} GB ${esc(r.ram_type||'')}</td><td>${esc(r.operating_system||'—')}</td><td><span class="status ${lc}">${lt}</span></td><td>${renderTags(r)}</td><td>${esc(r.submission_count||0)}/3</td>
- <td><div class="action-group"><button class="action-btn view-row" data-id="${r.id}" title="Ver">${eyeSvg}</button><button class="action-btn edit-row" data-id="${r.id}" title="Editar">${editSvg}</button>${isSuper()?`<button class="action-btn delete-row" data-id="${r.id}" title="Eliminar">${trashSvg}</button>`:''}</div></td></tr>`}).join('')||'<tr><td colspan="13">Sin registros.</td></tr>';
+ <td><div class="action-group"><button class="action-btn view-row" data-id="${r.id}" title="Ver">${eyeSvg}</button><button class="action-btn edit-row" data-id="${r.id}" title="Editar">${editSvg}</button>${isSuper()?`<button class="action-btn delete-row" data-id="${r.id}" title="Eliminar">${trashSvg}</button>`:''}</div></td></tr>`}).join('')||'<tr><td colspan="14">Sin registros.</td></tr>';
  const pages=Math.max(1,Math.ceil(state.total/state.size));
  $$('.pager-info').forEach(el=>el.textContent=`Página ${state.page+1} de ${pages} · ${state.total} registros`);
  $$('.pager-prev').forEach(el=>el.disabled=state.page===0);
@@ -463,7 +750,7 @@ function syncSelectionUI(){
  if($('#assignTagBtn'))$('#assignTagBtn').disabled=!state.selected.size;
  $('#selectPage').checked=state.rows.length>0&&state.rows.every(r=>state.selected.has(r.id));
 }
-function detailsHtml(r){const fields=[['Oficina',r.office_name],['Equipo',r.equipment_name],['Host',r.hostname],['Marca',r.brand],['Modelo',r.model],['Procesador',r.processor],['Núcleos',r.cores],['RAM',`${r.ram_gb||'—'} GB ${r.ram_type||''}`],['Almacenamiento',r.storage],['Gráfica',r.graphics],['Windows',r.operating_system],['Versión',r.windows_version],['Build',r.windows_build],['Product ID',r.product_id],['Licencia',r.windows_license_status],['Canal',r.windows_license_channel],['Clave parcial',r.windows_partial_product_key],['OEM Key',r.windows_oem_key],['Placa madre',r.motherboard],['BIOS Serial',r.bios_serial],['BIOS',r.bios_version],['UUID',r.device_uuid],['Dominio/Grupo',r.domain_workgroup],['Sistema',r.system_type],['Etiquetas',rowTags(r).map(t=>t.name).join(', ')||'—'],['Relevamientos',`${r.submission_count}/3`]];return `<div class="details-grid">${fields.map(([a,b])=>`<div><b>${esc(a)}</b>${esc(b||'—')}</div>`).join('')}</div>`}
+function detailsHtml(r){const fields=[['Oficina',r.office_name],['Equipo',r.equipment_name],['Tipo de equipo',r.equipment_type],['Ítem origen',r.source_item_no],['Hoja origen',r.source_sheet],['Año adquisición',r.acquisition_year],['Cant. procesadores',r.processor_count],['Host',r.hostname],['Marca',r.brand],['Modelo',r.model],['Procesador',r.processor],['Núcleos',r.cores],['RAM',`${r.ram_gb||'—'} GB ${r.ram_type||''}`],['Almacenamiento',r.storage],['Gráfica',r.graphics],['Windows',r.operating_system],['Versión',r.windows_version],['Build',r.windows_build],['Product ID',r.product_id],['Licencia',r.windows_license_status],['Canal',r.windows_license_channel],['Clave parcial',r.windows_partial_product_key],['OEM Key',r.windows_oem_key],['Placa madre',r.motherboard],['BIOS Serial',r.bios_serial],['BIOS',r.bios_version],['UUID',r.device_uuid],['Dominio/Grupo',r.domain_workgroup],['Sistema',r.system_type],['Etiquetas',rowTags(r).map(t=>t.name).join(', ')||'—'],['Relevamientos',`${r.submission_count}/3`]];return `<div class="details-grid">${fields.map(([a,b])=>`<div><b>${esc(a)}</b>${esc(b||'—')}</div>`).join('')}</div>`}
 async function viewRow(id){const r=state.rows.find(x=>x.id===id);if(r)Swal.fire({...swal,title:esc(r.equipment_name),html:detailsHtml(r),width:850,confirmButtonText:'Cerrar'})}
 function editTagSelector(row){
  const selected=new Set(rowTags(row).map(t=>t.id));
@@ -509,6 +796,11 @@ async function editRow(id){
    <div class="edit-section-title">Identificación</div>
    <div class="edit-field"><label>Oficina</label><select id="eOfficeId" class="modern-select">${officeOptions}</select></div>
    ${text('eEquip','Equipo',r.equipment_name)}
+   ${text('eEquipmentType','Tipo de equipo',r.equipment_type)}
+   ${text('eSourceItem','Ítem origen',r.source_item_no)}
+   ${text('eSourceSheet','Hoja origen',r.source_sheet)}
+   ${text('eAcquisitionYear','Año de adquisición',r.acquisition_year,'number')}
+   ${text('eProcessorCount','Cant. de procesadores',r.processor_count,'number')}
    ${text('eHostname','Hostname',r.hostname)}
    ${text('eFullName','Nombre completo del dispositivo',r.full_device_name)}
    ${text('eDomain','Dominio / Grupo',r.domain_workgroup)}
@@ -573,6 +865,11 @@ async function editRow(id){
        office_id:officeId,
        office_name:office?.name||r.office_name,
        equipment_name:clean($('#eEquip').value),
+       equipment_type:clean($('#eEquipmentType').value),
+       source_item_no:clean($('#eSourceItem').value),
+       source_sheet:clean($('#eSourceSheet').value),
+       acquisition_year:Number($('#eAcquisitionYear').value)||null,
+       processor_count:Number($('#eProcessorCount').value)||null,
        hostname:clean($('#eHostname').value),
        full_device_name:clean($('#eFullName').value),
        domain_workgroup:clean($('#eDomain').value),
@@ -623,9 +920,47 @@ async function deleteIds(ids){
  const {error}=await sb.rpc('superadmin_delete_inventories',{p_ids:ids});if(error)return msg('error','No se pudo eliminar',error.message);ids.forEach(id=>state.selected.delete(id));await loadInventory();msg('success','Eliminación completada');
 }
 function csvEscape(v){const s=String(v??'');return `"${s.replace(/"/g,'""')}"`}
-async function allInventory(){const {data,error}=await fetchFilteredInventory(false);if(error)throw error;return data||[]}
-async function exportCSV(){try{const rows=await allInventory(),cols=['last_submitted_at','office_name','equipment_name','brand','model','processor','cores','ram_gb','ram_type','storage','graphics','operating_system','windows_version','windows_build','windows_license_status','windows_license_channel','windows_partial_product_key','hostname','motherboard','bios_serial','device_uuid','submission_count'];const csv=[cols.concat(['tags']).join(','),...rows.map(r=>cols.map(c=>csvEscape(r[c])).concat(csvEscape(rowTags(r).map(t=>t.name).join('|'))).join(','))].join('\r\n');downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`inventario_${Date.now()}.csv`)}catch(e){msg('error','No se pudo exportar',e.message)}}
-async function exportPDF(){try{const rows=await allInventory();const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape'});let logo=null;try{const res=await fetch($('#brandLogo').src);const blob=await res.blob();logo=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)})}catch{};if(logo)doc.addImage(logo,'PNG',12,8,34,15);doc.setFontSize(15);doc.text('RELEVAMIENTO MANAGER - Inventario de Equipos',52,15);doc.setFontSize(9);doc.text(`Fecha: ${new Date().toLocaleString('es-AR')} · Usuario: ${state.user.email}`,52,21);doc.autoTable({startY:28,head:[['Oficina','Equipo','Marca/Modelo','CPU','RAM','Windows','Licencia','3x']],body:rows.map(r=>[r.office_name,r.equipment_name,`${r.brand||''} ${r.model||''}`,r.processor,`${r.ram_gb||''} GB ${r.ram_type||''}`,r.operating_system,r.windows_license_status,`${r.submission_count}/3`]),styles:{fontSize:7},headStyles:{fillColor:[30,50,78]}});const y=doc.internal.pageSize.height-8;doc.setFontSize(7);doc.text('RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina · by Ing. Fernando Gambino · Todos los Derechos Registrados',12,y);doc.save(`inventario_${Date.now()}.pdf`)}catch(e){msg('error','No se pudo generar PDF',e.message)}}
+async function allInventory(options={}){
+ const source=options.ignoreSource?'all':undefined;
+ const {data,error}=await fetchFilteredInventory(false,source);
+ if(error)throw error;return data||[];
+}
+function exportAllSheets(){return ($('#exportScope')?.value||state.exportScope)==='all'}
+function exportLabel(){return exportAllSheets()?'Todas las hojas':(state.sourceView==='all'?'Todos':sourceDisplayName(state.sourceView==='__automatic__'?null:state.sourceView))}
+function exportSuffix(){return exportAllSheets()?'todas-las-hojas':sourceSlug(state.sourceView==='all'?'todos':state.sourceView==='__automatic__'?'relevamiento-automatico':state.sourceView)}
+async function exportCSV(){
+ try{
+  const rows=await allInventory({ignoreSource:exportAllSheets()});
+  const headers=['Hoja/Origen','Fecha','Oficina','Equipo','Tipo','Item','Unidad','Marca','Modelo','Año','Cant. procesadores','CPU','Núcleos','RAM GB','Tipo RAM','Almacenamiento','Gráfica','Windows','Versión','Build','Licencia','Canal','Clave parcial','Hostname','Placa madre','BIOS Serial','UUID','3x','Etiquetas'];
+  const csv=[headers.map(csvEscape).join(','),...rows.map(r=>[
+    sourceDisplayName(r.source_sheet),r.last_submitted_at,r.office_name,r.equipment_name,r.equipment_type,r.source_item_no,r.source_unit_no,
+    r.brand,r.model,r.acquisition_year,r.processor_count,r.processor,r.cores,r.ram_gb,r.ram_type,r.storage,r.graphics,r.operating_system,
+    r.windows_version,r.windows_build,r.windows_license_status,r.windows_license_channel,r.windows_partial_product_key,r.hostname,
+    r.motherboard,r.bios_serial,r.device_uuid,`${r.submission_count||0}/3`,rowTags(r).map(t=>t.name).join('|')
+  ].map(csvEscape).join(','))].join('\r\n');
+  downloadBlob(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`inventario_${exportSuffix()}_${Date.now()}.csv`);
+ }catch(e){msg('error','No se pudo exportar CSV',e.message)}
+}
+async function exportPDF(){
+ try{
+  const rows=await allInventory({ignoreSource:exportAllSheets()});
+  const {jsPDF}=window.jspdf,doc=new jsPDF({orientation:'landscape'});
+  let logo=null;try{const res=await fetch($('#brandLogo').src),blob=await res.blob();logo=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)})}catch{}
+  if(logo)doc.addImage(logo,'PNG',12,8,34,15);
+  doc.setFontSize(15);doc.text('RELEVAMIENTO MANAGER - Inventario de Equipos',52,15);
+  doc.setFontSize(9);doc.text(`Hoja/alcance: ${exportLabel()}`,52,21);
+  doc.text(`Fecha: ${new Date().toLocaleString('es-AR')} · Usuario: ${state.user.email}`,52,26);
+  doc.autoTable({
+   startY:32,
+   head:[['Hoja/Origen','Oficina','Equipo','Tipo','Marca/Modelo','CPU','RAM','Windows','Licencia','3x']],
+   body:rows.map(r=>[sourceDisplayName(r.source_sheet),r.office_name,r.equipment_name,r.equipment_type||'—',`${r.brand||''} ${r.model||''}`.trim(),r.processor,`${r.ram_gb||''} GB ${r.ram_type||''}`,r.operating_system,r.windows_license_status,`${r.submission_count||0}/3`]),
+   styles:{fontSize:6.6},headStyles:{fillColor:[30,50,78]},columnStyles:{0:{cellWidth:30}}
+  });
+  const pages=doc.internal.getNumberOfPages();
+  for(let p=1;p<=pages;p++){doc.setPage(p);doc.setFontSize(7);doc.text(`RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina · by Ing. Fernando Gambino · Todos los Derechos Registrados · Página ${p}/${pages}`,12,doc.internal.pageSize.height-8)}
+  doc.save(`inventario_${exportSuffix()}_${Date.now()}.pdf`);
+ }catch(e){msg('error','No se pudo generar PDF',e.message)}
+}
 
 async function invokeFn(name,body){
  const {data,error}=await sb.functions.invoke(name,{body});if(error){let detail=error.message;try{if(error.context){const j=await error.context.json();detail=j.error||j.message||detail}}catch{}throw new Error(detail)}return data;
@@ -730,6 +1065,9 @@ function bind(){
  click('#clearSelectionBtn',()=>{state.selected.clear();renderInventory()});
  click('#deleteSelectedBtn',()=>deleteIds([...state.selected]));
 
+ $('#sourceSheetTabs')?.addEventListener('click',e=>{const b=e.target.closest('.source-sheet-tab');if(b)changeSourceView(b.dataset.sourceSheet)});
+ change('#exportScope',e=>{state.exportScope=e.target.value||'current'});
+ change('#importMode',()=>{if(state.importSheet)renderImportCandidate(state.importSheet)});
  click('#exportCsvBtn',exportCSV);
  click('#exportPdfBtn',exportPDF);
  click('#addAdminBtn',addAdmin);
@@ -760,6 +1098,16 @@ function bind(){
  change('#importFile',e=>{
    const f=e.target.files?.[0];
    if(f)parseImportFile(f).catch(err=>msg('error','No se pudo leer la planilla',err.message));
+ });
+ change('#importSheetSelect',e=>{
+   const c=state.importCandidates?.[Number(e.target.value)];
+   if(c){
+     $('#importOfficeFallback').value=c.meta?.office_name||'';
+     renderImportCandidate(c);
+   }
+ });
+ $('#importOfficeFallback')?.addEventListener('input',()=>{
+   if(state.importSheet)renderImportCandidate(state.importSheet);
  });
  click('#runImportBtn',runImport);
 

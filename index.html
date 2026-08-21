@@ -8,7 +8,7 @@
   <title>RELEVAMIENTO MANAGER</title>
   <link id="appFavicon" rel="icon" href="assets/icons/favicon.svg">
   <link id="manifestLink" rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.2.3">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.3.1">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -23,7 +23,7 @@
       <span><strong id="brandTitle">RELEVAMIENTO MANAGER</strong><small>Dirección de Informática · Ministerio de Educación Tucumán</small></span>
     </span>
   </button>
-  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.2.3</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
+  <div class="top-actions"><span class="version-pill" id="versionBadge">v1.3.1</span><button class="icon-btn" id="adminOpenBtn" title="Administración" aria-label="Administración">⚙</button></div>
 </header>
 
 <main class="shell">
@@ -73,11 +73,22 @@
         <div class="stat card glass"><small>Sin licencia</small><strong id="statUnlicensed">0</strong></div>
         <div class="stat card glass"><small>Completados 3/3</small><strong id="statComplete">0</strong></div>
       </div>
+      <div class="source-sheet-card card glass">
+        <div class="source-sheet-head">
+          <div><small class="eyebrow">HOJA / ORIGEN</small><strong>Inventario por pestañas</strong></div>
+          <span id="sourceSheetSummary" class="muted">Todos los registros</span>
+        </div>
+        <div id="sourceSheetTabs" class="source-sheet-tabs" role="tablist"></div>
+      </div>
       <div class="smart-filter-card card glass">
         <div class="toolbar smart-toolbar">
           <select class="modern-select" id="pageSize" title="Registros por página"><option>5</option><option selected>10</option><option>25</option><option>50</option><option>100</option><option>500</option><option>1000</option></select>
           <input id="inventoryFilter" placeholder="Buscar oficina, equipo, CPU, Windows, hostname...">
           <button class="secondary" id="toggleSmartFiltersBtn">⚡ Filtros inteligentes</button>
+          <select class="modern-select export-scope-select" id="exportScope">
+            <option value="current">Exportar: pestaña actual</option>
+            <option value="all">Exportar: todas las hojas</option>
+          </select>
           <button class="secondary" id="exportCsvBtn">CSV</button><button class="secondary" id="exportPdfBtn">PDF</button>
         </div>
         <div id="smartFilters" class="smart-filters">
@@ -105,7 +116,7 @@
         <button class="danger-btn" id="deleteSelectedBtn" disabled>Eliminar seleccionados</button>
       </div>
       <div class="table-wrap glass"><table><thead><tr>
-        <th></th><th>Estado</th><th>Fecha</th><th>Oficina</th><th>Equipo</th><th>Marca/Modelo</th><th>CPU</th><th>RAM</th><th>Windows</th><th>Licencia</th><th>Etiquetas</th><th>3x</th><th>Acciones</th>
+        <th></th><th>Estado</th><th>Hoja/Origen</th><th>Fecha</th><th>Oficina</th><th>Equipo</th><th>Marca/Modelo</th><th>CPU</th><th>RAM</th><th>Windows</th><th>Licencia</th><th>Etiquetas</th><th>3x</th><th>Acciones</th>
       </tr></thead><tbody id="inventoryBody"></tbody></table></div>
       <div class="pager pager-bottom" aria-label="Paginación inferior"><button class="secondary pager-prev" type="button">← Atrás</button><span class="pager-info"></span><button class="secondary pager-next" type="button">Siguiente →</button></div>
     </section>
@@ -142,6 +153,19 @@
               <span>Formatos .xlsx, .xls y .csv. Compatible con la planilla histórica de MEDTUC.</span>
               <input id="importFile" type="file" accept=".xlsx,.xls,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
             </div>
+            <div id="importDetectedPanel" class="import-detected hidden">
+              <div class="import-detected-grid import-detected-grid-3">
+                <div class="field"><label for="importMode">Qué importar</label>
+                  <select id="importMode" class="modern-select">
+                    <option value="all">Todas las hojas detectadas</option>
+                    <option value="current">Solo la hoja seleccionada</option>
+                  </select>
+                </div>
+                <div class="field"><label for="importSheetSelect">Hoja para previsualizar</label><select id="importSheetSelect" class="modern-select"></select></div>
+                <div class="field"><label for="importOfficeFallback">Oficina / Repartición</label><input id="importOfficeFallback" placeholder="Se detectará desde la planilla o podés completarla"></div>
+              </div>
+              <div id="importMetaInfo" class="import-meta-info"></div>
+            </div>
             <div id="importMapping" class="mapping-grid hidden"></div>
             <div id="importPreview" class="table-wrap hidden"></div>
             <div class="import-actions">
@@ -168,7 +192,7 @@
           </article>
 
           <article class="card glass settings-pane config-pane" data-pane="updates">
-            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.2.3</b></div></div>
+            <div class="section-head"><div><div class="eyebrow">SUPERADMIN</div><h2>Actualizaciones</h2><p>El patch puede actualizar archivos y ejecutar sus migraciones SQL automáticamente.</p></div><div class="version-box">Versión instalada <b id="installedVersion">v1.3.1</b></div></div>
             <div id="patchState" class="patch-state"><span class="dot warn"></span><div><b>Sin patch adjunto</b><small>Adjuntá un .ZIP compatible.</small></div></div>
             <input id="patchInput" type="file" accept=".zip,application/zip" hidden>
             <div class="update-actions"><button class="secondary" id="checkUpdatesBtn">Buscar actualizaciones</button><button class="secondary" id="attachPatchBtn">Adjuntar patch .ZIP</button><button class="primary" id="installPatchBtn" disabled>Instalar actualización</button></div>
@@ -185,5 +209,5 @@
 <footer class="footer">RELEVAMIENTO MANAGER © 2026 Tucumán - Argentina<br>by <a href="https://github.com/fmgambino" target="_blank" rel="noopener">Ing. Fernando Gambino</a> · Todos los Derechos Registrados</footer>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="assets/js/config.js"></script>
-<script src="assets/js/app.js?v=1.2.3"></script>
+<script src="assets/js/app.js?v=1.3.1"></script>
 </body></html>

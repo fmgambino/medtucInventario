@@ -589,3 +589,89 @@
 @media (min-width:700px){
   .tag-selector{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* ==========================================================
+   v1.3.0 — Importador inteligente de planillas heterogéneas
+   ========================================================== */
+.import-detected{
+  margin-top:14px;
+  padding:14px;
+  border:1px solid rgba(148,163,184,.14);
+  border-radius:16px;
+  background:rgba(6,16,29,.38);
+}
+.import-detected-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+}
+.import-detected .field{margin:0}
+.import-detected input,
+.import-detected select{
+  width:100%;
+  min-height:44px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.17);
+  background:rgba(6,15,27,.74);
+  color:var(--text);
+  padding:0 12px;
+}
+.import-meta-info{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:12px;
+}
+.import-meta-info span{
+  padding:7px 10px;
+  border-radius:999px;
+  border:1px solid rgba(125,211,252,.13);
+  background:rgba(96,165,250,.07);
+  color:#aebfd4;
+  font-size:.76rem;
+}
+.import-preview-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  padding:11px 12px;
+  color:#aebfd4;
+  border-bottom:1px solid rgba(148,163,184,.10);
+}
+.mapping-grid{
+  margin-top:14px;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+}
+.mapping-item{
+  min-width:0;
+}
+.mapping-item span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.import-actions{
+  margin-top:14px;
+}
+@media (min-width:720px){
+  .import-detected-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+}
+
+/* v1.3.1 — pestañas por hoja y exportación */
+.source-sheet-card{padding:14px;margin-bottom:12px;overflow:hidden}
+.source-sheet-head{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.source-sheet-head strong{font-size:1rem}
+.source-sheet-tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 1px 7px;scrollbar-width:thin;scrollbar-color:rgba(110,205,240,.44) transparent}
+.source-sheet-tabs::-webkit-scrollbar{height:6px}
+.source-sheet-tabs::-webkit-scrollbar-thumb{border-radius:999px;background:linear-gradient(90deg,rgba(96,165,250,.52),rgba(94,234,212,.46))}
+.source-sheet-tab{flex:0 0 auto;display:flex;align-items:center;gap:9px;min-height:42px;padding:9px 12px;border:1px solid rgba(148,163,184,.13);border-radius:12px;background:rgba(7,17,30,.54);color:#aabbd0;font-weight:800;cursor:pointer;transition:.16s ease}
+.source-sheet-tab:hover{color:#eef6ff;border-color:rgba(125,211,252,.25);background:rgba(96,165,250,.07)}
+.source-sheet-tab.active{color:#f3f8ff;border-color:rgba(94,234,212,.28);background:linear-gradient(135deg,rgba(96,165,250,.15),rgba(94,234,212,.09))}
+.source-sheet-tab b{min-width:25px;padding:3px 7px;border-radius:999px;background:rgba(148,163,184,.10);font-size:.72rem;text-align:center}
+.source-badge{display:inline-block;max-width:180px;padding:5px 8px;border-radius:9px;background:rgba(96,165,250,.08);border:1px solid rgba(125,211,252,.12);color:#a9c8e9;font-size:.72rem;line-height:1.2}
+.export-scope-select{min-width:190px}
+.import-detected-grid-3{grid-template-columns:1fr}
+@media(min-width:720px){.source-sheet-head{flex-direction:row;align-items:center;justify-content:space-between}.import-detected-grid-3{grid-template-columns:minmax(0,.85fr) minmax(0,1fr) minmax(0,1.15fr)}}
+@media(max-width:719px){.export-scope-select{width:100%;min-width:0}.source-sheet-card{padding:12px}.source-sheet-tab{min-height:40px;padding:8px 10px}}
